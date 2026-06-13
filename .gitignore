@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Environment
+.env
+.env.local
+
+# Model artifacts
+*.pt
+*.pth
+*.safetensors
+
+# Logs
+*.log
+
+# Internal notes — not for publication
+*.private.md
+
+# Ratings — live data lives on the VPS host via bind mount, not in git
+ratings/*.csv
+!ratings/.gitkeep
