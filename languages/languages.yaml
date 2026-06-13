@@ -1,0 +1,139 @@
+# HUSIKA TTS — Language configuration (Sprint 1)
+#
+# Each language lists which engines can synthesize it.
+# preferred_engine is tried first; the router falls back automatically.
+
+languages:
+  swa:
+    name: "Swahili"
+    preferred_engine: "mms"
+    espeak_support: true
+    mms_support: true
+    status: "Ready"
+
+  amh:
+    name: "Amharic"
+    preferred_engine: "mms"
+    espeak_support: false
+    mms_support: true
+    status: "Ready"
+
+  ara:
+    name: "Arabic"
+    preferred_engine: "mms"
+    espeak_support: true
+    mms_support: true
+    status: "Ready"
+
+  som:
+    name: "Somali"
+    preferred_engine: "mms"
+    espeak_support: false
+    mms_support: true
+    status: "Ready"
+
+  orm:
+    name: "Oromo"
+    preferred_engine: "mms"
+    espeak_support: false
+    mms_support: true
+    status: "Ready"
+
+  tir:
+    name: "Tigrinya"
+    preferred_engine: "mms"
+    espeak_support: true
+    mms_support: true
+    status: "Ready"
+
+  lug:
+    name: "Luganda"
+    preferred_engine: "mms"
+    espeak_support: false
+    mms_support: true
+    status: "Ready"
+
+  kin:
+    name: "Kinyarwanda"
+    preferred_engine: "mms"
+    espeak_support: false
+    mms_support: true
+    status: "Ready"
+
+  rn:
+    name: "Kirundi"
+    preferred_engine: "mms"
+    espeak_support: false
+    mms_support: true
+    status: "Ready"
+
+  nue:
+    name: "Nuer"
+    preferred_engine: "mms"
+    espeak_support: false
+    mms_support: true
+    status: "Ready"
+
+  din:
+    name: "Dinka"
+    preferred_engine: "mms"
+    espeak_support: false
+    mms_support: true
+    status: "Ready"
+
+  en:
+    name: "English"
+    preferred_engine: "espeak"
+    espeak_support: true
+    mms_support: true
+    status: "Ready"
+
+  fr:
+    name: "French"
+    preferred_engine: "espeak"
+    espeak_support: true
+    mms_support: true
+    status: "Ready"
+
+  pko:
+    name: "Pokoot"
+    preferred_engine: "mms"
+    espeak_support: false
+    mms_support: true
+    status: "Ready"
+
+  tuv:
+    name: "Turkana"
+    preferred_engine: "coqui_vits"
+    espeak_support: false
+    mms_support: false
+    coqui_vits_support: true
+    status: "Ready"
+
+  kdj:
+    name: "Karamojong"
+    preferred_engine: "coqui_vits"
+    espeak_support: false
+    mms_support: false
+    coqui_vits_support: true
+    status: "Beta"
+
+# Engine metadata
+engines:
+  espeak:
+    description: "eSpeak NG — fast, rule-based, offline"
+    latency_ms: 100
+    quality: "functional"
+
+  mms:
+    description: "Meta MMS — neural, 1200+ languages"
+    model_source: "huggingface"
+    model_base: "facebook/mms-tts"
+    latency_ms: 2000
+    quality: "good"
+
+  coqui_vits:
+    description: "Coqui VITS — in-house fine-tunes for low-resource languages"
+    model_source: "huggingface"
+    latency_ms: 2000
+    quality: "good"
