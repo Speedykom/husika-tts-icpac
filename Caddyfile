@@ -1,0 +1,21 @@
+# Caddy config for the husika.de dev environment.
+# Auto-TLS via Let's Encrypt. Caddy handles cert issuance and renewal — we
+# never touch certbot or write nginx-style ssl_* directives.
+#
+# To enable basic auth later (when access control is needed), add inside the
+# site block:
+#   basicauth {
+#       <username> <bcrypt-hash>   # generate with: docker run --rm caddy:2-alpine caddy hash-password
+#   }
+
+husika.de, www.husika.de {
+	encode zstd gzip
+
+	reverse_proxy app:8000
+
+	# Caddy access log → stdout, captured by `docker logs caddy`.
+	log {
+		output stdout
+		format console
+	}
+}

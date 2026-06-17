@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HUSIKA TTS — Test UI</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 640px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      color: #1a1a1a;
+      background: #f8f9fa;
+    }
+    h1 { font-size: 1.4rem; margin-bottom: .25rem; }
+    .subtitle { color: #666; font-size: .9rem; margin-bottom: 1.5rem; }
+    label { display: block; font-weight: 600; margin-bottom: .3rem; font-size: .9rem; }
+    textarea, select, input[type="text"], input[type="password"], button {
+      width: 100%;
+      padding: .6rem .75rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: .95rem;
+      font-family: inherit;
+    }
+    textarea { resize: vertical; min-height: 100px; }
+    select { background: #fff; }
+    .row { display: flex; gap: .75rem; }
+    .row > * { flex: 1; }
+    .field { margin-bottom: 1rem; }
+    button {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      padding: .75rem;
+      transition: background .15s;
+    }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #93c5fd; cursor: wait; }
+    .error { color: #dc2626; font-weight: 600; }
+    audio { width: 100%; margin-top: .5rem; }
+
+    /* ── Login panel ── */
+    #login-panel {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 1.5rem;
+    }
+    #login-panel h2 { font-size: 1.1rem; margin-bottom: 1rem; }
+    #login-error { font-size: .85rem; margin-top: .5rem; min-height: 1.2em; }
+
+    /* ── App panel (hidden until logged in) ── */
+    #app-panel { display: none; }
+    #app-panel.visible { display: block; }
+
+    /* topbar */
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 1.5rem;
+    }
+    .topbar-right { font-size: .85rem; color: #555; }
+    .topbar-right span { font-weight: 600; color: #1a1a1a; }
+    #btn-logout {
+      display: inline;
+      width: auto;
+      padding: .3rem .75rem;
+      font-size: .8rem;
+      background: #6b7280;
+      margin-left: .5rem;
+    }
+    #btn-logout:hover { background: #4b5563; }
+
+    /* result */
+    #result {
+      margin-top: 1.25rem;
+      padding: 1rem;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      display: none;
+    }
+    #result.visible { display: block; }
+    .meta { font-size: .85rem; color: #666; margin-top: .5rem; }
+
+    /*Rating panel */
+    #rating-panel {
+      margin-top: 1.25rem;
+      padding: 1rem;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      display: none;
+    }
+    #rating-panel.visible { display: block; }
+    #rating-panel h2 { font-size: 1rem; margin-bottom: .75rem; }
+    .stars {
+      display: flex;
+      gap: .25rem;
+      margin-bottom: .75rem;
+    }
+    .stars button {
+      width: 2.5rem;
+      height: 2.5rem;
+      padding: 0;
+      font-size: 1.5rem;
+      line-height: 1;
+      background: none;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      color: #d1d5db;
+      cursor: pointer;
+      transition: color .1s, background .1s, border-color .1s;
+    }
+    .stars button:hover,
+    .stars button.active {
+      color: #f59e0b;
+      background: #fffbeb;
+      border-color: #f59e0b;
+    }
+    .stars button:hover ~ button { color: #d1d5db; background: none; border-color: #ccc; }
+    #rating-comment { margin-bottom: .75rem; }
+    #rating-comment textarea { min-height: 60px; font-size: .9rem; }
+    #rating-status { font-size: .85rem; margin-top: .5rem; }
+    .rating-saved { color: #16a34a; font-weight: 600; }
+    .rating-error { color: #dc2626; font-weight: 600; }
+    #btn-submit-rating { background: #16a34a; }
+    #btn-submit-rating:hover { background: #15803d; }
+    #btn-submit-rating:disabled { background: #86efac; }
+
+    /* ── Admin panel ── */
+    #admin-panel {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      display: none;
+    }
+    #admin-panel h2 { font-size: 1rem; margin-bottom: .75rem; }
+    .admin-table { width: 100%; border-collapse: collapse; font-size: .88rem; margin-bottom: 1rem; }
+    .admin-table th { text-align: left; padding: .35rem .5rem; border-bottom: 2px solid #e5e7eb; font-size: .8rem; color: #555; }
+    .admin-table td { padding: .35rem .5rem; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+    .admin-table tr:last-child td { border-bottom: none; }
+    .btn-sm { width: auto; padding: .25rem .55rem; font-size: .78rem; margin-right: .25rem; }
+    .btn-warn { background: #d97706; }
+    .btn-warn:hover { background: #b45309; }
+    .btn-danger { background: #dc2626; }
+    .btn-danger:hover { background: #b91c1c; }
+    #admin-add summary { font-weight: 600; cursor: pointer; padding: .4rem 0; color: #2563eb; }
+    #admin-add-status { font-size: .85rem; margin-top: .4rem; min-height: 1.2em; }
+    .check-row { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; }
+    .check-row input[type="checkbox"] { width: auto; }
+    .check-row label { margin: 0; font-weight: 400; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Login panel ── -->
+  <div id="login-panel">
+    <h1>HUSIKA TTS</h1>
+    <p class="subtitle">Multilingual Text-to-Speech &mdash; please log in to continue</p>
+    <div class="field">
+      <label for="username">Username</label>
+      <input type="text" id="username" autocomplete="username" placeholder="Username" />
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input type="password" id="password" autocomplete="current-password" placeholder="Password" />
+    </div>
+    <button id="btn-login" onclick="login()">Log in</button>
+    <div id="login-error"></div>
+  </div>
+
+  <!-- ── App panel (shown after login) ── -->
+  <div id="app-panel">
+    <div class="topbar">
+      <div>
+        <h1>HUSIKA TTS</h1>
+        <p class="subtitle">Multilingual Text-to-Speech</p>
+      </div>
+      <div class="topbar-right">
+        Logged in as <span id="display-username"></span>
+        <button id="btn-logout" onclick="logout()">Log out</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="text">Text to synthesize</label>
+      <textarea id="text" placeholder="Type or paste text here...">Habari, hii ni ujumbe wa majaribio.</textarea>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="lang">Language</label>
+        <select id="lang"><!-- populated from /languages --></select>
+      </div>
+      <div class="field">
+        <label for="speed">Speed</label>
+        <select id="speed">
+          <option value="0.75">0.75x</option>
+          <option value="1.0" selected>1.0x</option>
+          <option value="1.25">1.25x</option>
+          <option value="1.5">1.5x</option>
+        </select>
+      </div>
+    </div>
+
+    <button id="btn" onclick="synthesize()">Synthesize</button>
+
+    <div id="result">
+      <audio id="player" controls></audio>
+      <div class="meta" id="meta"></div>
+    </div>
+
+    <!-- Admin panel — only visible to admin users -->
+    <div id="admin-panel">
+      <h2>&#9881; User Management</h2>
+      <div id="admin-user-table-wrap"><p style="color:#888;font-size:.9rem">Loading…</p></div>
+      <details id="admin-add">
+        <summary>+ Add user</summary>
+        <div style="margin-top:.75rem">
+          <div class="field">
+            <label for="new-username">Username</label>
+            <input type="text" id="new-username" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="new-password">Password</label>
+            <input type="password" id="new-password" autocomplete="new-password" />
+          </div>
+          <div class="check-row">
+            <input type="checkbox" id="new-is-admin" />
+            <label for="new-is-admin">Admin</label>
+          </div>
+          <button onclick="createUser()" style="background:#2563eb">Add user</button>
+          <div id="admin-add-status"></div>
+        </div>
+      </details>
+    </div>
+
+    <!-- Rating panel — shown after synthesis -->
+    <div id="rating-panel">
+      <h2>Rate this audio (1–5 stars)</h2>
+      <div class="stars" id="stars" role="group" aria-label="Rating">
+        <button type="button" data-value="1" aria-label="1 star" onclick="selectStar(1)">★</button>
+        <button type="button" data-value="2" aria-label="2 stars" onclick="selectStar(2)">★</button>
+        <button type="button" data-value="3" aria-label="3 stars" onclick="selectStar(3)">★</button>
+        <button type="button" data-value="4" aria-label="4 stars" onclick="selectStar(4)">★</button>
+        <button type="button" data-value="5" aria-label="5 stars" onclick="selectStar(5)">★</button>
+      </div>
+      <div class="field" id="audio-upload-field">
+        <label>Record reference audio (optional, 16kHz mono WAV/MP3):</label>
+        <div id="recorder-controls">
+          <button id="btn-record" type="button" onclick="toggleRecording()">Record</button>
+          <button id="btn-stop" type="button" onclick="stopRecording()" style="display:none">Stop</button>
+          <button id="btn-play" type="button" onclick="playRecording()" style="display:none;">Play</button>
+          <button id="btn-reset" type="button" onclick="resetRecording()" style="display:none; margin-top: 1em;">Re-record</button>
+        </div>
+        <audio id="recorded-audio" controls style="display:none; margin-top:0.5em"></audio>
+        <span id="audio-upload-status" style="margin-left:0.5em;font-size:0.95em;"></span>
+        <input type="file" id="audio-upload" accept="audio/*" style="display:none" />
+      </div>
+      <div class="field" id="rating-comment">
+        <label for="comment">Comment <span style="font-weight:400;color:#666">(optional)</span></label>
+        <textarea id="comment" placeholder="Pronunciation issues, background noise, etc."></textarea>
+      </div>
+      <button id="btn-submit-rating" onclick="submitRating()">Save rating</button>
+      <div id="rating-status"></div>
+    </div>
+  </div>
+
+  <script>
+        // Audio recording and upload logic
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let recordedBlob = null;
+        let isRecording = false;
+        let uploadedAudioPath = null;
+
+        function toggleRecording() {
+          if (isRecording) return;
+          navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+              mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+              recordedChunks = [];
+              mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+              mediaRecorder.onstop = () => {
+                recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+                const audio = document.getElementById('recorded-audio');
+                if (audio) {
+                  audio.src = URL.createObjectURL(recordedBlob);
+                  audio.style.display = '';
+                }
+                const btnPlay = document.getElementById('btn-play');
+                if (btnPlay) btnPlay.style.display = '';
+                const btnReset = document.getElementById('btn-reset');
+                if (btnReset) btnReset.style.display = '';
+              };
+              mediaRecorder.start();
+              isRecording = true;
+              const btnRecord = document.getElementById('btn-record');
+              if (btnRecord) btnRecord.style.display = 'none';
+              const btnStop = document.getElementById('btn-stop');
+              if (btnStop) btnStop.style.display = '';
+              const status = document.getElementById('audio-upload-status');
+              if (status) status.textContent = 'Recording...';
+            })
+            .catch(err => {
+              const status = document.getElementById('audio-upload-status');
+              if (status) status.textContent = 'Mic denied or unavailable.';
+            });
+        }
+
+        function stopRecording() {
+          if (mediaRecorder && isRecording) {
+            mediaRecorder.stop();
+            isRecording = false;
+            const btnStop = document.getElementById('btn-stop');
+            if (btnStop) btnStop.style.display = 'none';
+            const status = document.getElementById('audio-upload-status');
+            if (status) status.textContent = 'Recording stopped.';
+          }
+        }
+
+        function playRecording() {
+          const audio = document.getElementById('recorded-audio');
+          if (audio && audio.src) audio.play();
+        }
+
+        function resetRecording() {
+          recordedChunks = [];
+          recordedBlob = null;
+          const audio = document.getElementById('recorded-audio');
+          if (audio) {
+            audio.src = '';
+            audio.style.display = 'none';
+          }
+          const btnPlay = document.getElementById('btn-play');
+          if (btnPlay) btnPlay.style.display = 'none';
+          const btnReset = document.getElementById('btn-reset');
+          if (btnReset) btnReset.style.display = 'none';
+          const btnRecord = document.getElementById('btn-record');
+          if (btnRecord) btnRecord.style.display = '';
+          const status = document.getElementById('audio-upload-status');
+          if (status) status.textContent = '';
+          uploadedAudioPath = null;
+        }
+
+        async function uploadAudio() {
+          const statusEl = document.getElementById('audio-upload-status');
+          const fileInput = document.getElementById('audio-upload');
+          // Prefer recorded audio if available, else fallback to file input
+          let fileToUpload = null;
+          let filename = 'recording.webm';
+          if (recordedBlob) {
+            fileToUpload = recordedBlob;
+          } else if (fileInput.files && fileInput.files.length > 0) {
+            fileToUpload = fileInput.files[0];
+            filename = fileToUpload.name;
+          }
+          if (!fileToUpload) {
+            statusEl.textContent = 'No recording or file selected.';
+            return;
+          }
+          statusEl.textContent = 'Uploading...';
+          try {
+            const formData = new FormData();
+            formData.append('file', fileToUpload, filename);
+            const res = await apiFetch(`${API}/upload-audio`, {
+              method: 'POST',
+              headers: authHeaders(),
+              body: formData,
+            });
+            if (!res.ok) {
+              const err = await res.json();
+              throw new Error(err.detail || res.statusText);
+            }
+            const data = await res.json();
+            uploadedAudioPath = data.audio_file;
+            statusEl.textContent = 'Uploaded!';
+          } catch (e) {
+            statusEl.textContent = `Failed: ${e.message}`;
+            uploadedAudioPath = null;
+          }
+        }
+    const API = window.location.origin;
+    let selectedRating = 0;
+    let lastSynthText = "";
+    let lastSynthLang = "";
+
+    // ── Token helpers ──────────────────────────────────────────────────────
+
+    function getToken() {
+      return sessionStorage.getItem("husika_token");
+    }
+
+    function setToken(token, username, isAdmin) {
+      sessionStorage.setItem("husika_token", token);
+      sessionStorage.setItem("husika_username", username);
+      sessionStorage.setItem("husika_is_admin", isAdmin ? "1" : "0");
+    }
+
+    function clearToken() {
+      sessionStorage.removeItem("husika_token");
+      sessionStorage.removeItem("husika_username");
+    }
+
+    function authHeaders(extra = {}) {
+      return { "Authorization": `Bearer ${getToken()}`, ...extra };
+    }
+
+    // Auth-aware fetch: redirects to login on 401
+
+    async function apiFetch(url, options = {}) {
+      const res = await fetch(url, options);
+      if (res.status === 401) {
+        clearToken();
+        showLogin("Session expired — please log in again.");
+        throw new Error("Unauthorized");
+      }
+      return res;
+    }
+
+    // Panel switching
+
+    function showLogin(message = "") {
+      document.getElementById("login-panel").style.display = "";
+      document.getElementById("app-panel").className = "";
+      document.getElementById("login-error").innerHTML =
+        message ? `<span class="error">${message}</span>` : "";
+      document.getElementById("password").value = "";
+    }
+
+    function showApp(username, isAdmin) {
+      document.getElementById("login-panel").style.display = "none";
+      document.getElementById("app-panel").className = "visible";
+      document.getElementById("display-username").textContent = username;
+      const adminPanel = document.getElementById("admin-panel");
+      const ttsFields = [
+        ...Array.from(document.querySelectorAll('#app-panel > .field, #app-panel > .row, #btn, #result, #rating-panel')).filter(el => !document.getElementById('admin-panel').contains(el)),
+      ];
+      if (isAdmin) {
+        adminPanel.style.display = "block";
+        // Hide all TTS/rating UI
+        ttsFields.forEach(el => { if (el) el.style.display = "none"; });
+        loadUsers();
+      } else {
+        adminPanel.style.display = "none";
+        // Show all TTS/rating UI
+        ttsFields.forEach(el => { if (el) el.style.display = ""; });
+        loadLanguages();
+      }
+    }
+
+    // Login / Logout
+
+    async function login() {
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+      const errEl = document.getElementById("login-error");
+      const btn = document.getElementById("btn-login");
+
+      if (!username || !password) {
+        errEl.innerHTML = '<span class="error">Please enter username and password.</span>';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Logging in…";
+      errEl.innerHTML = "";
+
+      try {
+        // OAuth2PasswordRequestForm expects form-encoded body
+        const body = new URLSearchParams({ username, password });
+        const res = await fetch(`${API}/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body,
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || "Login failed");
+        }
+
+        const data = await res.json();
+        setToken(data.access_token, username, data.is_admin);
+        showApp(username, data.is_admin);
+      } catch (e) {
+        errEl.innerHTML = `<span class="error">${e.message}</span>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Log in";
+      }
+    }
+
+    function logout() {
+      clearToken();
+      showLogin();
+    }
+
+    // Allow Enter key on login fields
+    ["username", "password"].forEach((id) =>
+      document.getElementById(id).addEventListener("keydown", (e) => {
+        if (e.key === "Enter") login();
+      })
+    );
+
+    // Languages 
+    async function loadLanguages() {
+      try {
+        const res = await fetch(`${API}/languages`);
+        const langs = await res.json();
+        const sel = document.getElementById("lang");
+        sel.innerHTML = "";
+        for (const [code, info] of Object.entries(langs)) {
+          const opt = document.createElement("option");
+          opt.value = code;
+          opt.textContent = `${info.name} (${code})`;
+          if (code === "swa") opt.selected = true;
+          sel.appendChild(opt);
+        }
+      } catch (e) {
+        console.error("Failed to load languages:", e);
+      }
+    }
+
+    // Synthesis 
+
+    async function synthesize() {
+      const btn = document.getElementById("btn");
+      const resultDiv = document.getElementById("result");
+      const player = document.getElementById("player");
+      const metaDiv = document.getElementById("meta");
+
+      const text = document.getElementById("text").value.trim();
+      if (!text) return;
+
+      btn.disabled = true;
+      btn.textContent = "Synthesizing...";
+      resultDiv.className = "";
+      metaDiv.innerHTML = "";
+      hideRatingPanel();
+
+      try {
+        const res = await apiFetch(`${API}/tts`, {
+          method: "POST",
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            text,
+            lang_code: document.getElementById("lang").value,
+            speed: parseFloat(document.getElementById("speed").value),
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || res.statusText);
+        }
+
+        const data = await res.json();
+
+        const raw = atob(data.audio_base64);
+        const bytes = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        const blob = new Blob([bytes], { type: "audio/wav" });
+        player.src = URL.createObjectURL(blob);
+        player.play();
+
+        lastSynthText = text;
+        lastSynthLang = data.lang_code;
+
+        resultDiv.className = "visible";
+        metaDiv.textContent = `Engine: ${data.engine} | Format: ${data.format} | Sample rate: ${data.sample_rate} Hz`;
+
+        showRatingPanel();
+        await loadExistingRating(lastSynthLang, lastSynthText);
+      } catch (e) {
+        if (e.message === "Unauthorized") return;
+        resultDiv.className = "visible";
+        player.removeAttribute("src");
+        metaDiv.innerHTML = `<span class="error">${e.message}</span>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Synthesize";
+      }
+    }
+
+    //Stars
+
+    function selectStar(value) {
+      selectedRating = value;
+      document.querySelectorAll(".stars button").forEach((btn) => {
+        btn.classList.toggle("active", parseInt(btn.dataset.value) <= value);
+      });
+    }
+
+    function resetStars() {
+      selectedRating = 0;
+      document.querySelectorAll(".stars button").forEach((b) => b.classList.remove("active"));
+    }
+
+    //Rating panel
+
+    function showRatingPanel() {
+      resetStars();
+      document.getElementById("comment").value = "";
+      document.getElementById("rating-status").innerHTML = "";
+      resetRecording();
+      document.getElementById("rating-panel").className = "visible";
+    }
+
+    function hideRatingPanel() {
+      document.getElementById("rating-panel").className = "";
+    }
+
+    async function loadExistingRating(language, phrase) {
+      const reviewer = sessionStorage.getItem("husika_username") || "";
+      if (!reviewer) return;
+      try {
+        const params = new URLSearchParams({ language, reviewer, phrase });
+        const res = await apiFetch(`${API}/ratings?${params}`, {
+          headers: authHeaders(),
+        });
+        if (!res.ok) return;
+        const rows = await res.json();
+        if (rows.length > 0) {
+          const existing = rows[0];
+          selectStar(existing.rating);
+          document.getElementById("comment").value = existing.comment || "";
+          document.getElementById("rating-status").innerHTML =
+            `<span class="rating-saved">You rated this ${existing.rating}★ previously — update below.</span>`;
+        }
+      } catch (_) { /* non-critical */ }
+    }
+
+    async function submitRating() {
+      if (selectedRating === 0) {
+        document.getElementById("rating-status").innerHTML =
+          '<span class="rating-error">Please select a star rating first.</span>';
+        return;
+      }
+
+      const submitBtn = document.getElementById("btn-submit-rating");
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Saving…";
+
+      try {
+        const reviewer = sessionStorage.getItem("husika_username") || "unknown";
+        const payload = {
+          reviewer,
+          language: lastSynthLang,
+          phrase: lastSynthText,
+          rating: selectedRating,
+          comment: document.getElementById("comment").value.trim() || null,
+        };
+        // If a recording exists and hasn't been uploaded, upload it now
+        if (recordedBlob && !uploadedAudioPath) {
+          document.getElementById('audio-upload-status').textContent = 'Uploading audio...';
+          await uploadAudio();
+        }
+        if (uploadedAudioPath) {
+          payload.audio_file = uploadedAudioPath;
+        }
+        const res = await apiFetch(`${API}/ratings`, {
+          method: "POST",
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || res.statusText);
+        }
+        const saved = await res.json();
+        document.getElementById("rating-status").innerHTML =
+          `<span class="rating-saved">Rating saved: ${saved.rating}★ at ${new Date(saved.timestamp).toLocaleString()}</span>`;
+      } catch (e) {
+        if (e.message === "Unauthorized") return;
+        document.getElementById("rating-status").innerHTML =
+          `<span class="rating-error">Failed to save: ${e.message}</span>`;
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Save rating";
+      }
+    }
+
+    // ── Admin ──────────────────────────────────────────────────────────
+
+    function escHtml(s) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    async function loadUsers() {
+      const wrap = document.getElementById("admin-user-table-wrap");
+      try {
+        const res = await apiFetch(`${API}/admin/users`, { headers: authHeaders() });
+        if (!res.ok) throw new Error(await res.text());
+        const users = await res.json();
+        if (users.length === 0) {
+          wrap.innerHTML = "<p style='color:#888;font-size:.9rem'>No users yet.</p>";
+          return;
+        }
+        const currentUser = sessionStorage.getItem("husika_username") || "";
+        const rows = users.map(u => {
+          const isSelf = u.username.toLowerCase() === currentUser.toLowerCase();
+          return `
+            <tr>
+              <td>${escHtml(u.username)}</td>
+              <td style="text-align:center">${u.is_admin ? "&#10003;" : ""}</td>
+              <td>${new Date(u.created_at).toLocaleDateString()}</td>
+              <td>
+                <button class="btn-sm btn-warn" onclick="resetPassword('${escHtml(u.username)}')">Reset pw</button>
+                <button class="btn-sm btn-danger" onclick="deleteUser('${escHtml(u.username)}')"${isSelf ? ' disabled title="You cannot delete your own account"' : ''}>Delete</button>
+              </td>
+            </tr>`;
+        }).join("");
+        wrap.innerHTML = `
+          <table class="admin-table">
+            <thead><tr>
+              <th>Username</th><th>Admin</th><th>Created</th><th>Actions</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`;
+      } catch (e) {
+        wrap.innerHTML = `<span class="error">${e.message}</span>`;
+      }
+    }
+
+    async function createUser() {
+      const username = document.getElementById("new-username").value.trim();
+      const password = document.getElementById("new-password").value;
+      const is_admin = document.getElementById("new-is-admin").checked;
+      const statusEl = document.getElementById("admin-add-status");
+      if (!username || !password) {
+        statusEl.innerHTML = '<span class="error">Username and password are required.</span>';
+        return;
+      }
+      try {
+        const res = await apiFetch(`${API}/admin/users`, {
+          method: "POST",
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ username, password, is_admin }),
+        });
+        if (!res.ok) { const e = await res.json(); throw new Error(e.detail || res.statusText); }
+        statusEl.innerHTML = `<span style="color:#16a34a;font-weight:600">User "${escHtml(username)}" created.</span>`;
+        document.getElementById("new-username").value = "";
+        document.getElementById("new-password").value = "";
+        document.getElementById("new-is-admin").checked = false;
+        loadUsers();
+      } catch (e) {
+        statusEl.innerHTML = `<span class="error">${e.message}</span>`;
+      }
+    }
+
+    async function resetPassword(username) {
+      const newPw = prompt(`New password for "${username}":`);
+      if (newPw === null) return;
+      if (!newPw.trim()) { alert("Password cannot be empty."); return; }
+      try {
+        const res = await apiFetch(`${API}/admin/users/${encodeURIComponent(username)}/reset-password`, {
+          method: "POST",
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ password: newPw }),
+        });
+        if (!res.ok) { const e = await res.json(); throw new Error(e.detail || res.statusText); }
+        alert(`Password for "${username}" updated.`);
+      } catch (e) { alert(`Error: ${e.message}`); }
+    }
+
+    async function deleteUser(username) {
+      if (!confirm(`Delete user "${username}"? This cannot be undone.`)) return;
+      try {
+        const res = await apiFetch(`${API}/admin/users/${encodeURIComponent(username)}`, {
+          method: "DELETE",
+          headers: authHeaders(),
+        });
+        if (!res.ok) { const e = await res.json(); throw new Error(e.detail || res.statusText); }
+        loadUsers();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    }
+
+    //Init
+    const storedToken = getToken();
+    const storedUser = sessionStorage.getItem("husika_username");
+    const storedIsAdmin = sessionStorage.getItem("husika_is_admin") === "1";
+    if (storedToken && storedUser) {
+      showApp(storedUser, storedIsAdmin);
+    }
+  </script>
+</body>
+</html>

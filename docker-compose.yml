@@ -1,0 +1,59 @@
+# Compose stack for the husika.de dev environment.
+# Lives on the VPS at /srv/husika/docker-compose.yml.
+# Same shape will be reused on the IGAD prod VPS — only image tag, host,
+# and secrets change.
+
+services:
+  app:
+    image: ${IMAGE:-ghcr.io/speedykom/husika-tts:latest}
+    build: .
+    restart: unless-stopped
+    expose:
+      - "8000"
+    ports:
+      - "8000:8000"
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      HF_HOME: /root/.cache/huggingface
+      HF_TOKEN: ${HF_TOKEN:-}
+      MMS_MODEL_OVERRIDES: ${MMS_MODEL_OVERRIDES:-}
+      COQUI_MODELS: ${COQUI_MODELS:-}
+      JWT_SECRET: ${JWT_SECRET:-change-before-deploying}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      DB_PATH: /app/data/husika.db
+      API_KEY: ${API_KEY}
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - internal
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  hf_cache:
+  caddy_data:
+  caddy_config:
