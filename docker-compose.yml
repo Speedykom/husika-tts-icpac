@@ -16,6 +16,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       HF_HOME: /root/.cache/huggingface
       HF_TOKEN: ${HF_TOKEN:-}
+      PIPER_MODELS_DIR: /app/data/piper-models
       MMS_MODEL_OVERRIDES: ${MMS_MODEL_OVERRIDES:-}
       COQUI_MODELS: ${COQUI_MODELS:-}
       JWT_SECRET: ${JWT_SECRET:-change-before-deploying}
