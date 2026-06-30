@@ -37,6 +37,19 @@ CREATE TABLE IF NOT EXISTS ratings (
     audio_file  TEXT,
     PRIMARY KEY (reviewer, language, phrase)
 );
+
+CREATE TABLE IF NOT EXISTS logs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp  TEXT NOT NULL,
+    level      TEXT NOT NULL,
+    logger     TEXT NOT NULL,
+    event      TEXT,
+    message    TEXT NOT NULL,
+    fields     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs (timestamp);
+CREATE INDEX IF NOT EXISTS idx_logs_event ON logs (event);
 """
 
 

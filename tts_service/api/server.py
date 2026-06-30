@@ -16,6 +16,7 @@ from jose import JWTError, jwt
 
 from ..auth import UserStore
 from ..engines.engine_router import EngineRouter
+from ..logging_config import configure_logging
 from ..ratings import RatingsStore
 from .schemas import (
     CreateUserRequest,
@@ -28,7 +29,7 @@ from .schemas import (
     UserRecord,
 )
 
-logging.basicConfig(level=logging.INFO)
+configure_logging()
 logger = logging.getLogger(__name__)
 
 # Auth configuration
@@ -213,11 +214,23 @@ async def login(form: OAuth2PasswordRequestForm = Depends()) -> TokenResponse:
     """Exchange username + password for a Bearer JWT."""
     user = _user_store.authenticate(form.username, form.password)
     if not user:
+        logger.warning(
+            "login failed",
+            extra={"event": "login_failed", "username": form.username},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    logger.info(
+        "login succeeded",
+        extra={
+            "event": "login",
+            "username": user["username"],
+            "is_admin": bool(user.get("is_admin", False)),
+        },
+    )
     return TokenResponse(
         access_token=_create_token(user["username"]),
         is_admin=bool(user.get("is_admin", False)),
@@ -259,6 +272,17 @@ async def synthesize(
             language_code=lang_code,
             speed=request.speed,
         )
+        logger.info(
+            "synthesis completed",
+            extra={
+                "event": "synthesis",
+                "requested_lang": request.lang_code,
+                "resolved_lang": lang_code,
+                "engine": result["engine"],
+                "chars": len(request.text),
+                "speed": request.speed,
+            },
+        )
         return TTSResponse(
             audio_base64=result["audio_base64"],
             format=result["format"],
@@ -268,8 +292,12 @@ async def synthesize(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Synthesis failed: {e}", exc_info=True)
+    except Exception:
+        logger.error(
+            "synthesis failed",
+            exc_info=True,
+            extra={"event": "synthesis_failed", "requested_lang": request.lang_code},
+        )
         raise HTTPException(status_code=500, detail="Synthesis failed")
 
 
@@ -308,6 +336,17 @@ async def submit_rating(
         rating=request.rating,
         comment=request.comment,
         audio_file=getattr(request, "audio_file", None),
+    )
+    logger.info(
+        "rating saved",
+        extra={
+            "event": "rating_saved",
+            "reviewer": request.reviewer,
+            "language": request.language,
+            "rating": request.rating,
+            "has_comment": bool(request.comment),
+            "has_audio": bool(getattr(request, "audio_file", None)),
+        },
     )
     return RatingResponse(
         reviewer=record["reviewer"],
@@ -371,6 +410,15 @@ async def admin_create_user(
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     user = _user_store.get_user(result["username"])
+    logger.info(
+        "user created",
+        extra={
+            "event": "user_created",
+            "username": user["username"],
+            "is_admin": user["is_admin"],
+            "by": _admin["username"],
+        },
+    )
     return UserRecord(
         username=user["username"],
         is_admin=user["is_admin"],
@@ -387,6 +435,14 @@ async def admin_reset_password(
     """Set a new password for the given user."""
     if not _user_store.update_password(username, request.password):
         raise HTTPException(status_code=404, detail=f"User '{username}' not found")
+    logger.info(
+        "password reset",
+        extra={
+            "event": "password_reset",
+            "username": username,
+            "by": _admin["username"],
+        },
+    )
 
 
 @app.delete("/admin/users/{username}", status_code=204)
@@ -398,6 +454,10 @@ async def admin_delete_user(
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
     if not _user_store.delete_user(username):
         raise HTTPException(status_code=404, detail=f"User '{username}' not found")
+    logger.info(
+        "user deleted",
+        extra={"event": "user_deleted", "username": username, "by": admin["username"]},
+    )
 
 
 @app.post("/upload-audio")
@@ -413,6 +473,15 @@ async def upload_audio(
     dest = uploads_dir / fname
     with dest.open("wb") as out_file:
         shutil.copyfileobj(file.file, out_file)
+    logger.info(
+        "audio uploaded",
+        extra={
+            "event": "audio_upload",
+            "username": _user["username"],
+            "file": f"uploads/{fname}",
+            "size_bytes": dest.stat().st_size,
+        },
+    )
     return {"audio_file": f"uploads/{fname}"}
 
 
