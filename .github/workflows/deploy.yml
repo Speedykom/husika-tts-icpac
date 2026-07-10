@@ -38,8 +38,6 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-        env:
-          DOCKER_CONFIG: /tmp/docker-build-config
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -72,6 +70,7 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
+            echo "${GHCR_PAT}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
             cd /srv/husika
             export IMAGE="ghcr.io/speedykom/husika-tts-icpac:${{ needs.build.outputs.sha_tag }}"
             grep -q '^IMAGE=' .env && sed -i "s|^IMAGE=.*|IMAGE=${IMAGE}|" .env || echo "IMAGE=${IMAGE}" >> .env
@@ -79,7 +78,9 @@ jobs:
             docker compose down --remove-orphans
             docker compose up -d
             docker image prune -f
-
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          GHCR_USER: ${{ github.actor }}
       - name: Health check
         run: |
           set -euo pipefail
