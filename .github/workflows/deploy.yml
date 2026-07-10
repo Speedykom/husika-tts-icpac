@@ -72,7 +72,7 @@ jobs:
           script: |
             set -euo pipefail
             cd /srv/husika
-            export IMAGE="ghcr.io/speedykom/husika-tts:${{ needs.build.outputs.sha_tag }}"
+            export IMAGE="ghcr.io/speedykom/husika-tts-icpac:${{ needs.build.outputs.sha_tag }}"
             grep -q '^IMAGE=' .env && sed -i "s|^IMAGE=.*|IMAGE=${IMAGE}|" .env || echo "IMAGE=${IMAGE}" >> .env
             docker compose pull
             docker compose down --remove-orphans
