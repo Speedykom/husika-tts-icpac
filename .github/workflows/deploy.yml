@@ -38,7 +38,8 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
+        env:
+          DOCKER_CONFIG: /tmp/docker-build-config
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v5
