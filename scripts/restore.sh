@@ -61,4 +61,24 @@ docker compose -f "$DEPLOY_DIR/docker-compose.yml" down
 cp "$BACKUP_FILE" "$DEPLOY_DIR/data/husika.db"
 docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d
 
+# `up -d` returns as soon as containers start, not once the app is serving.
+# Poll the compose healthcheck so "Restore complete" only prints when the app
+# is actually healthy. Cap the wait so a failed start errors out instead of
+# hanging (healthcheck: 30s start_period + 30s interval, so ~120s is ample).
+echo "Waiting for the app to become healthy..."
+app_cid=$(docker compose -f "$DEPLOY_DIR/docker-compose.yml" ps -q app || true)
+health=""
+for _ in $(seq 1 60); do
+  health=$(docker inspect --format '{{.State.Health.Status}}' "$app_cid" 2>/dev/null || true)
+  [ "$health" = "healthy" ] && break
+  [ "$health" = "unhealthy" ] && break
+  sleep 2
+done
+
+if [ "$health" != "healthy" ]; then
+  echo "ERROR: app did not become healthy after restore (status: ${health:-unknown})."
+  echo "Inspect with: docker compose -f $DEPLOY_DIR/docker-compose.yml logs app"
+  exit 1
+fi
+
 echo "[$(date)] Restore complete from $BACKUP_FILE"
