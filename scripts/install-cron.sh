@@ -1,4 +1,6 @@
 #!/bin/bash
+# Run on the server only. Paths are hardcoded to /srv/husika (where the compose
+# stack lives) and it writes to /etc/cron.d and /var/log — do not run locally.
 set -euo pipefail
 
 DEPLOY_DIR=/srv/husika
