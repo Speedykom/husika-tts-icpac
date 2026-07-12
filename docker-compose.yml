@@ -3,6 +3,8 @@
 # Same shape will be reused on the IGAD prod VPS — only image tag, host,
 # and secrets change.
 
+name: husika
+
 services:
   app:
     image: ${IMAGE:-ghcr.io/speedykom/husika-tts:latest}
