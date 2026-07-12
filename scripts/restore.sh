@@ -23,6 +23,9 @@ echo "Restoring from: $BACKUP_FILE"
 echo "This will restart the app. Press Ctrl+C within 5 seconds to cancel."
 sleep 5
 
+# Intentionally brings the whole stack down (app + Caddy), so the public site
+# returns 502 for the duration of the restore. This is an accepted maintenance
+# window: it guarantees no process holds husika.db open while we swap the file.
 docker compose -f "$DEPLOY_DIR/docker-compose.yml" down
 cp "$BACKUP_FILE" "$DEPLOY_DIR/data/husika.db"
 docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d
