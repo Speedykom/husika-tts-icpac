@@ -6,7 +6,8 @@
 languages:
   swa:
     name: "Swahili"
-    preferred_engine: "mms"
+    preferred_engine: "piper"
+    piper_support: true
     espeak_support: true
     mms_support: true
     status: "Ready"
@@ -20,7 +21,8 @@ languages:
 
   ara:
     name: "Arabic"
-    preferred_engine: "mms"
+    preferred_engine: "piper"
+    piper_support: true
     espeak_support: true
     mms_support: true
     status: "Ready"
@@ -83,14 +85,16 @@ languages:
 
   en:
     name: "English"
-    preferred_engine: "espeak"
+    preferred_engine: "piper"
+    piper_support: true
     espeak_support: true
     mms_support: true
     status: "Ready"
 
   fr:
     name: "French"
-    preferred_engine: "espeak"
+    preferred_engine: "piper"
+    piper_support: true
     espeak_support: true
     mms_support: true
     status: "Ready"
@@ -120,6 +124,13 @@ languages:
 
 # Engine metadata
 engines:
+  piper:
+    description: "Piper TTS + ONNX neural synthesis"
+    model_source: "huggingface"
+    model_base: "rhasspy/piper-voices"
+    latency_ms: 500
+    quality: "high"
+
   espeak:
     description: "eSpeak NG — fast, rule-based, offline"
     latency_ms: 100
