@@ -20,7 +20,9 @@ from fastapi import (
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
@@ -175,9 +177,9 @@ Alternatively, obtain a short-lived JWT via `POST /auth/login` and send it as\
 
 | Code | Language    | Engine |
 |------|-------------|--------|
-| `swa` | Swahili    | MMS    |
+| `swa` | Swahili    | Piper  |
 | `amh` | Amharic    | MMS    |
-| `ara` | Arabic     | MMS    |
+| `ara` | Arabic     | Piper  |
 | `som` | Somali     | MMS    |
 | `orm` | Oromo      | MMS    |
 | `tir` | Tigrinya   | MMS    |
@@ -189,8 +191,8 @@ Alternatively, obtain a short-lived JWT via `POST /auth/login` and send it as\
 | `pko` | Pokoot     | MMS    |
 | `tuv` | Turkana    | Coqui VITS |
 | `kdj` | Karamojong | Coqui VITS |
-| `en`  | English    | eSpeak |
-| `fr`  | French     | eSpeak |
+| `en`  | English    | Piper  |
+| `fr`  | French     | Piper  |
 
 ## Audio Format
 
@@ -208,6 +210,7 @@ app = FastAPI(
     description=_DESCRIPTION,
     version="0.1.0",
     lifespan=_lifespan,
+    docs_url=None,
     openapi_tags=[
         {"name": "TTS", "description": "Text-to-speech synthesis endpoints"},
         {"name": "Auth", "description": "Obtain a short-lived JWT Bearer token"},
@@ -266,6 +269,81 @@ def _custom_openapi() -> dict:
 
 
 app.openapi = _custom_openapi
+
+_TTS_AUDIO_SCRIPT = """<script>
+(function () {
+  'use strict';
+
+  var _origFetch = window.fetch;
+  window.fetch = function (input, init) {
+    var url = typeof input === 'string' ? input
+            : (input && input.url) ? input.url : '';
+    var result = _origFetch.apply(this, arguments);
+    if (/\\/tts(\\?.*)?$/.test(url)) {
+      result.then(function (resp) {
+        resp.clone().json().then(function (body) {
+          if (body && body.audio_base64) {
+            _showPlayer(body.audio_base64);
+          }
+        }).catch(function () {});
+      }).catch(function () {});
+    }
+    return result;
+  };
+
+  function _showPlayer(audio64) {
+    /* Remove any previous player so re-executing gives a fresh one. */
+    var old = document.getElementById('tts-float-player');
+    if (old) old.remove();
+
+    var panel = document.createElement('div');
+    panel.id = 'tts-float-player';
+    panel.style.cssText = [
+      'position:fixed', 'bottom:24px', 'right:24px', 'z-index:99999',
+      'background:#fff', 'border:1px solid #ccc', 'border-radius:10px',
+      'padding:16px 16px 12px', 'box-shadow:0 4px 24px rgba(0,0,0,.18)',
+      'width:330px', 'font-family:sans-serif'
+    ].join(';');
+
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;';
+
+    var title = document.createElement('span');
+    title.textContent = '\\u25B6 TTS Audio Preview';
+    title.style.cssText = 'font-weight:700;font-size:13px;color:#3b4151;';
+
+    var closeBtn = document.createElement('button');
+    closeBtn.textContent = '\\u2715';
+    closeBtn.title = 'Close';
+    closeBtn.style.cssText = [
+      'border:none', 'background:none', 'cursor:pointer',
+      'font-size:15px', 'color:#888', 'padding:0 2px', 'line-height:1'
+    ].join(';');
+    closeBtn.onclick = function () { panel.remove(); };
+
+    var audio = document.createElement('audio');
+    audio.controls = true;
+    audio.autoplay = true;
+    audio.style.cssText = 'width:100%;display:block;';
+    audio.src = 'data:audio/wav;base64,' + audio64;
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+    panel.appendChild(header);
+    panel.appendChild(audio);
+    document.body.appendChild(panel);
+  }
+})();
+</script>"""
+
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui() -> HTMLResponse:
+    base = get_swagger_ui_html(openapi_url=app.openapi_url, title=app.title)
+    html = base.body.decode()
+    html = html.replace("</body>", _TTS_AUDIO_SCRIPT + "</body>")
+    return HTMLResponse(html)
+
 
 # Auth endpoints
 
