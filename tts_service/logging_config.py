@@ -74,6 +74,12 @@ class SQLiteLogHandler(logging.Handler):
 
     The structured `event` field (if present) is stored in its own column for
     easy filtering; any remaining `extra=` fields are stored as a JSON blob.
+
+    TODO: `emit` writes synchronously and opens a fresh connection per record.
+    Since this runs inline on the request path, under load it adds latency and
+    WAL write contention. Move to an async queue handler (e.g. a background
+    thread draining `logging.handlers.QueueHandler`/`QueueListener`, or batched
+    inserts on a reused connection) before this sees meaningful traffic.
     """
 
     def __init__(self, db) -> None:
