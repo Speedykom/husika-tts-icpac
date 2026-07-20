@@ -78,23 +78,18 @@ class RatingsStore:
             rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
-    def attach_audio(
-        self, reviewer: str, language: str, phrase: str, filename: str
-    ) -> bool:
+    def attach_audio(self, rating_id: int, filename: str) -> bool:
         """
-        Set audio_file on the most recent rating row for this
-        reviewer/language/phrase. Returns True if a row was found.
+        Set audio_file on the rating row with the given ``id`` (as returned by
+        :meth:`add`). Returns True if the row was found.
+
+        Targeting the exact id avoids the ambiguity of matching on
+        reviewer/language/phrase, where two ratings submitted close together
+        could otherwise attach the audio to the wrong row.
         """
         with _db.connect() as conn:
             cursor = conn.execute(
-                """UPDATE ratings SET audio_file = ?
-                   WHERE id = (
-                       SELECT id FROM ratings
-                       WHERE reviewer = ? COLLATE NOCASE
-                         AND language = ? COLLATE NOCASE
-                         AND phrase   = ?
-                       ORDER BY id DESC LIMIT 1
-                   )""",
-                (filename, reviewer, language, phrase),
+                "UPDATE ratings SET audio_file = ? WHERE id = ?",
+                (filename, rating_id),
             )
             return cursor.rowcount > 0
