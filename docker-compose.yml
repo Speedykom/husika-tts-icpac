@@ -22,7 +22,7 @@ services:
       COQUI_MODELS: ${COQUI_MODELS:-}
       JWT_SECRET: ${JWT_SECRET:-change-before-deploying}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
-      DB_PATH: /app/data/husika.db
+      DB_PATH: ${DB_PATH:-/app/data/husika.db}
       API_KEY: ${API_KEY}
     volumes:
       - hf_cache:/root/.cache/huggingface
