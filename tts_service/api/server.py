@@ -1,11 +1,13 @@
 """FastAPI TTS service for HUSIKA — Sprint 1 skeleton."""
 
+import asyncio
 import logging
 import os
 import shutil
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 from fastapi import (
     Depends,
@@ -24,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
 
 from ..auth import UserStore
+from ..db import _db
 from ..engines.engine_router import EngineRouter
 from ..logging_config import configure_logging
 from ..ratings import RatingsStore
@@ -50,6 +53,51 @@ _API_KEY = os.environ.get("API_KEY", "")
 
 _oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 _user_store = UserStore()
+
+# Log retention: prune rows older than LOG_RETENTION_DAYS (0 disables pruning)
+# every LOG_PRUNE_INTERVAL_HOURS while the service runs, keeping the shared
+# SQLite database bounded.
+_LOG_RETENTION_DAYS = int(os.environ.get("LOG_RETENTION_DAYS", "30"))
+_LOG_PRUNE_INTERVAL_HOURS = float(os.environ.get("LOG_PRUNE_INTERVAL_HOURS", "24"))
+
+
+async def _prune_logs_periodically() -> None:
+    """Prune old log rows on startup and then once per interval, forever."""
+    while True:
+        try:
+            # Run the blocking SQLite delete off the event loop.
+            deleted = await asyncio.to_thread(_db.prune_logs, _LOG_RETENTION_DAYS)
+            if deleted:
+                logger.info(
+                    "Pruned old log rows",
+                    extra={
+                        "event": "logs_pruned",
+                        "deleted": deleted,
+                        "retention_days": _LOG_RETENTION_DAYS,
+                    },
+                )
+        except Exception:
+            logger.exception("Log pruning failed")
+        await asyncio.sleep(_LOG_PRUNE_INTERVAL_HOURS * 3600)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Run the background log-pruning job for the lifetime of the app."""
+    prune_task = (
+        asyncio.create_task(_prune_logs_periodically())
+        if _LOG_RETENTION_DAYS > 0
+        else None
+    )
+    try:
+        yield
+    finally:
+        if prune_task is not None:
+            prune_task.cancel()
+            try:
+                await prune_task
+            except asyncio.CancelledError:
+                pass
 
 
 def _create_token(username: str) -> str:
@@ -159,6 +207,7 @@ app = FastAPI(
     title="Husika TTS API",
     description=_DESCRIPTION,
     version="0.1.0",
+    lifespan=_lifespan,
     openapi_tags=[
         {"name": "TTS", "description": "Text-to-speech synthesis endpoints"},
         {"name": "Auth", "description": "Obtain a short-lived JWT Bearer token"},
