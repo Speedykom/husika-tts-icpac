@@ -11,6 +11,7 @@ import logging
 import os
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -37,6 +38,19 @@ CREATE TABLE IF NOT EXISTS ratings (
     audio_file  TEXT,
     PRIMARY KEY (reviewer, language, phrase)
 );
+
+CREATE TABLE IF NOT EXISTS logs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp  TEXT NOT NULL,
+    level      TEXT NOT NULL,
+    logger     TEXT NOT NULL,
+    event      TEXT,
+    message    TEXT NOT NULL,
+    fields     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs (timestamp);
+CREATE INDEX IF NOT EXISTS idx_logs_event ON logs (event);
 """
 
 
@@ -58,6 +72,24 @@ class Database:
     def _init_schema(self) -> None:
         with self.connect() as conn:
             conn.executescript(_SCHEMA)
+
+    def prune_logs(self, retention_days: int) -> int:
+        """Delete `logs` rows older than ``retention_days`` and return the
+        number removed.
+
+        Keeps the shared database bounded so log volume doesn't grow forever.
+        Timestamps are stored as ISO-8601 UTC strings, which sort
+        lexicographically, so a string comparison on the indexed `timestamp`
+        column is correct. A non-positive ``retention_days`` is a no-op.
+        """
+        if retention_days <= 0:
+            return 0
+        cutoff = (
+            datetime.now(tz=timezone.utc) - timedelta(days=retention_days)
+        ).isoformat()
+        with self.connect() as conn:
+            cursor = conn.execute("DELETE FROM logs WHERE timestamp < ?", (cutoff,))
+            return cursor.rowcount
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
