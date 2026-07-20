@@ -1,5 +1,7 @@
 """Tests for the HUSIKA TTS service — Sprint 1."""
 
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -7,6 +9,7 @@ from tts_service.api.server import app
 from tts_service.engines.engine_router import EngineRouter
 from tts_service.engines.espeak_engine import ESPEAK_VOICE_MAP, EspeakEngine
 from tts_service.engines.mms_engine import MMS_MODELS, MmsEngine
+from tts_service.ratings.store import RatingsStore
 
 client = TestClient(app)
 
@@ -132,3 +135,22 @@ class TestTTSEndpoint:
             },
         )
         assert r.status_code == 422
+
+
+# ── Ratings persistence ────────────────────────────────────────
+
+
+class TestRatingsHistory:
+    def test_resubmitting_keeps_all_reviews(self):
+        """Re-rating the same phrase appends a new row instead of overwriting."""
+        store = RatingsStore()
+        phrase = f"history-test-{uuid.uuid4()}"
+        store.add("tester", "en", phrase, 2, "first take")
+        store.add("tester", "en", phrase, 5, "second take")
+
+        rows = store.query(reviewer="tester", language="en", phrase=phrase)
+
+        assert len(rows) == 2  # both reviews persisted
+        # query returns newest-first, so the latest review leads
+        assert [r["rating"] for r in rows] == [5, 2]
+        assert rows[0]["comment"] == "second take"

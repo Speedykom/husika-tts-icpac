@@ -9,11 +9,13 @@ from ..db import _db
 class RatingsStore:
     """Store that persists ratings to the shared SQLite database.
 
-    Primary key: (reviewer, language, phrase) — submitting again updates the row.
-    Reviewer and language comparisons are case-insensitive; phrase is exact-match.
+    Ratings are append-only: every submission is a new row, so re-rating the
+    same phrase keeps the full history instead of overwriting the earlier
+    review. Reviewer and language comparisons are case-insensitive; phrase is
+    exact-match.
     """
 
-    def upsert(
+    def add(
         self,
         reviewer: str,
         language: str,
@@ -23,26 +25,23 @@ class RatingsStore:
         audio_file: Optional[str] = None,
     ) -> dict:
         """
-        Insert or update a rating row.
-        Returns the saved record.
+        Insert a new rating row, preserving any previous reviews.
+        Returns the saved record (including its generated ``id``).
         """
         timestamp = datetime.now(tz=timezone.utc).isoformat()
         with _db.connect() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 (
                     "INSERT INTO ratings "
                     "(reviewer, language, phrase, rating, comment, timestamp, "
                     "audio_file) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?) "
-                    "ON CONFLICT(reviewer, language, phrase) DO UPDATE SET "
-                    "rating = excluded.rating, "
-                    "comment = excluded.comment, "
-                    "timestamp = excluded.timestamp, "
-                    "audio_file = COALESCE(excluded.audio_file, audio_file)"
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)"
                 ),
                 (reviewer, language, phrase, rating, comment, timestamp, audio_file),
             )
+            row_id = cursor.lastrowid
         return {
+            "id": row_id,
             "reviewer": reviewer,
             "language": language,
             "phrase": phrase,
@@ -58,10 +57,11 @@ class RatingsStore:
         reviewer: Optional[str] = None,
         phrase: Optional[str] = None,
     ) -> list[dict]:
-        """Return all ratings, optionally filtered by language, reviewer, or phrase."""
+        """Return matching ratings newest-first (most recent review first),
+        optionally filtered by language, reviewer, or phrase."""
         sql = (
-            "SELECT reviewer, language, phrase, rating, comment, timestamp, audio_file"
-            " FROM ratings WHERE 1=1"
+            "SELECT id, reviewer, language, phrase, rating, comment, timestamp,"
+            " audio_file FROM ratings WHERE 1=1"
         )
         params: list = []
         if language:
@@ -73,23 +73,23 @@ class RatingsStore:
         if phrase:
             sql += " AND phrase = ?"
             params.append(phrase)
+        sql += " ORDER BY id DESC"
         with _db.connect() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
-    def attach_audio(
-        self, reviewer: str, language: str, phrase: str, filename: str
-    ) -> bool:
+    def attach_audio(self, rating_id: int, filename: str) -> bool:
         """
-        Set audio_file on an existing rating row.
-        Returns True if the row was found.
+        Set audio_file on the rating row with the given ``id`` (as returned by
+        :meth:`add`). Returns True if the row was found.
+
+        Targeting the exact id avoids the ambiguity of matching on
+        reviewer/language/phrase, where two ratings submitted close together
+        could otherwise attach the audio to the wrong row.
         """
         with _db.connect() as conn:
             cursor = conn.execute(
-                """UPDATE ratings SET audio_file = ?
-                   WHERE reviewer = ? COLLATE NOCASE
-                     AND language = ? COLLATE NOCASE
-                     AND phrase   = ?""",
-                (filename, reviewer, language, phrase),
+                "UPDATE ratings SET audio_file = ? WHERE id = ?",
+                (filename, rating_id),
             )
             return cursor.rowcount > 0
