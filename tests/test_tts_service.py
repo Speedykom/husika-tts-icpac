@@ -132,3 +132,127 @@ class TestTTSEndpoint:
             },
         )
         assert r.status_code == 422
+
+
+# ── Toposa VITS engine ────────────────────────────────────────
+
+
+class TestToposaVitsEngine:
+    def test_parse_models_accepts_string_and_object_values(self):
+        from tts_service.engines.toposa_vits_engine import _parse_models
+
+        models = _parse_models(
+            '{"toq-clear": "org/clear",'
+            ' "toq-5spk": {"repo": "org/five", "speaker": "LA"}}'
+        )
+        assert models["toq-clear"] == {"repo": "org/clear", "speaker": None}
+        assert models["toq-5spk"] == {"repo": "org/five", "speaker": "LA"}
+
+    def test_parse_models_empty_env_is_no_models(self):
+        from tts_service.engines.toposa_vits_engine import _parse_models
+
+        assert _parse_models("") == {}
+        assert _parse_models("  ") == {}
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("Tana Joko", "tana joko"),
+            ("ngibaren  kalo\n wukor", "ŋibaren kalo wukor"),
+            ("Ngakipi, koni 12!", "ŋakipi koni"),
+            ("ŋibaren", "ŋibaren"),
+            ("a-b d'e", "a-b d'e"),
+            ("123 ?!", ""),
+        ],
+    )
+    def test_normalise_text(self, raw, expected):
+        from tts_service.engines.toposa_vits_engine import normalise_text
+
+        assert normalise_text(raw) == expected
+
+    def test_supports_only_configured_codes(self, monkeypatch):
+        from tts_service.engines import toposa_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "TOPOSA_MODELS", {"toq-clear": {"repo": "o/r", "speaker": None}}
+        )
+        engine = mod.ToposaVitsEngine()
+        assert engine.supports_language("toq-clear")
+        assert not engine.supports_language("toq-natural")
+
+    @pytest.mark.asyncio
+    async def test_rejects_unconfigured_language(self, monkeypatch):
+        from tts_service.engines import toposa_vits_engine as mod
+
+        monkeypatch.setattr(mod, "TOPOSA_MODELS", {})
+        with pytest.raises(ValueError):
+            await mod.ToposaVitsEngine().synthesize("tana joko", "toq-clear")
+
+    @pytest.mark.asyncio
+    async def test_rejects_text_without_toposa_letters(self, monkeypatch):
+        from tts_service.engines import toposa_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "TOPOSA_MODELS", {"toq-clear": {"repo": "o/r", "speaker": None}}
+        )
+        with pytest.raises(ValueError):
+            await mod.ToposaVitsEngine().synthesize("123 !?", "toq-clear")
+
+    @pytest.mark.asyncio
+    async def test_synthesize_with_stub_model(self, monkeypatch):
+        """Full path with a stub model: speaker choice, speed and WAV encoding."""
+        import base64
+
+        import numpy as np
+        import torch
+
+        from tts_service.engines import toposa_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod,
+            "TOPOSA_MODELS",
+            {"toq-5spk": {"repo": "o/r", "speaker": "LA"}},
+        )
+        seen = {}
+
+        class StubTokenizer:
+            def text_to_ids(self, text):
+                seen["text"] = text
+                return [1, 2, 3]
+
+        class StubModel:
+            speakers = ["AP", "LA"]
+            tokenizer = StubTokenizer()
+            config = type(
+                "C",
+                (),
+                {"model_args": type("A", (), {"use_speaker_embedding": True})()},
+            )()
+
+            def inference(self, x, aux_input):
+                seen["speaker_ids"] = aux_input["speaker_ids"].tolist()
+                seen["length_scale"] = self.length_scale
+                return {"model_outputs": torch.zeros(1, 1, 1600)}
+
+        engine = mod.ToposaVitsEngine()
+        engine._models["toq-5spk"] = StubModel()
+
+        result = await engine.synthesize("Ngibaren kalo", "toq-5spk", speed=2.0)
+
+        assert result["engine"] == "toposa_vits"
+        assert result["format"] == "wav"
+        assert result["sample_rate"] == 16000
+        wav = base64.b64decode(result["audio_base64"])
+        assert wav[:4] == b"RIFF" and wav[8:12] == b"WAVE"
+        assert seen["text"] == "ŋibaren kalo"
+        assert seen["speaker_ids"] == [1]  # configured speaker "LA"
+        assert seen["length_scale"] == pytest.approx(0.5)
+        assert np.frombuffer(wav[44:], dtype=np.int16).shape[0] == 1600
+
+
+class TestToposaLanguages:
+    def test_toposa_languages_listed_with_engine(self):
+        langs = client.get("/languages").json()
+        for code in ("toq-clear", "toq-natural", "toq-5spk"):
+            assert code in langs
+            assert langs[code]["preferred_engine"] == "toposa_vits"
