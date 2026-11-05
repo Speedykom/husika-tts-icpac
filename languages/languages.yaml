@@ -122,6 +122,32 @@ languages:
     coqui_vits_support: true
     status: "Beta"
 
+  # Toposa (toq): three fine-tuned checkpoints of facebook/mms-tts-kdj, served by
+  # the toposa_vits engine. Research prototypes, not validated by native speakers.
+  toq-clear:
+    name: "Toposa, clear voice"
+    preferred_engine: "toposa_vits"
+    espeak_support: false
+    mms_support: false
+    toposa_vits_support: true
+    status: "Beta"
+
+  toq-natural:
+    name: "Toposa, natural voice"
+    preferred_engine: "toposa_vits"
+    espeak_support: false
+    mms_support: false
+    toposa_vits_support: true
+    status: "Beta"
+
+  toq-5spk:
+    name: "Toposa, five-speaker model"
+    preferred_engine: "toposa_vits"
+    espeak_support: false
+    mms_support: false
+    toposa_vits_support: true
+    status: "Beta"
+
 # Engine metadata
 engines:
   piper:
@@ -148,3 +174,10 @@ engines:
     model_source: "huggingface"
     latency_ms: 2000
     quality: "good"
+
+  toposa_vits:
+    description: "Toposa VITS — MMS-kdj fine-tunes (clear, natural, five-speaker)"
+    model_source: "huggingface"
+    model_base: "facebook/mms-tts-kdj"
+    latency_ms: 3000
+    quality: "experimental"
