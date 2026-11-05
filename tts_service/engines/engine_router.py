@@ -11,6 +11,7 @@ from .coqui_vits_engine import CoquiVitsEngine
 from .espeak_engine import EspeakEngine
 from .mms_engine import MmsEngine
 from .piper_engine import PiperEngine
+from .toposa_vits_engine import ToposaVitsEngine
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class EngineRouter:
             "espeak": EspeakEngine(),
             "mms": MmsEngine(),
             "coqui_vits": CoquiVitsEngine(),
+            "toposa_vits": ToposaVitsEngine(),
         }
 
     def _load_config(self) -> dict:
