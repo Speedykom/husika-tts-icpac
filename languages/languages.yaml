@@ -122,6 +122,16 @@ languages:
     coqui_vits_support: true
     status: "Beta"
 
+  # Karamojong (kdj): fine-tuned checkpoint of facebook/mms-tts-kdj served by the
+  # karamojong_vits engine.
+  kdj-k05:
+    name: "Karamojong, K05 voice"
+    preferred_engine: "karamojong_vits"
+    espeak_support: false
+    mms_support: false
+    karamojong_vits_support: true
+    status: "Beta"
+
 # Engine metadata
 engines:
   piper:
@@ -148,3 +158,10 @@ engines:
     model_source: "huggingface"
     latency_ms: 2000
     quality: "good"
+
+  karamojong_vits:
+    description: "Karamojong VITS — MMS-kdj fine-tunes (K05 single speaker)"
+    model_source: "huggingface"
+    model_base: "facebook/mms-tts-kdj"
+    latency_ms: 3000
+    quality: "experimental"

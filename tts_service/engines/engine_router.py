@@ -9,6 +9,7 @@ import yaml
 from .base import TTSEngine
 from .coqui_vits_engine import CoquiVitsEngine
 from .espeak_engine import EspeakEngine
+from .karamojong_vits_engine import KaramojongVitsEngine
 from .mms_engine import MmsEngine
 from .piper_engine import PiperEngine
 
@@ -27,6 +28,7 @@ class EngineRouter:
             "espeak": EspeakEngine(),
             "mms": MmsEngine(),
             "coqui_vits": CoquiVitsEngine(),
+            "karamojong_vits": KaramojongVitsEngine(),
         }
 
     def _load_config(self) -> dict:

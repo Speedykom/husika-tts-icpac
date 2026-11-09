@@ -260,6 +260,7 @@ Returns `{"status": "ok"}`.
 | Dinka | `din` | — | yes | — | mms |
 | Turkana | `tuv` | — | — | yes | custom |
 | Karamojong | `kdj` | — | — | yes | custom |
+| Karamojong (K05 voice) | `kdj-k05` | — | — | yes | karamojong_vits |
 | Pokot | `pko` | — | yes | — | mms |
 | English | `en` | yes | yes | — | espeak |
 | French | `fr` | yes | yes | — | espeak |
