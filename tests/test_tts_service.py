@@ -387,3 +387,113 @@ class TestPokotLanguages:
             assert code in langs
             assert langs[code]["preferred_engine"] == "pokot_vits"
         assert langs["pko"]["preferred_engine"] != "pokot_vits"
+
+
+# ── Karamojong VITS engine ────────────────────────────────────
+
+
+class TestKaramojongVitsEngine:
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("Ngitunga daadang", "ŋituŋa daadaŋ"),
+            ("ng'aren  ng’ina\n kalo", "ŋaren ŋina kalo"),
+            # U+02BC is not kept by the training rules, so it splits the word
+            ("ngʼina", "ŋ ina"),
+            ("Ethiopia, chicha!", "etiopia cica"),
+            ("fazvix qñh", "paswiks kny"),
+            ("nngolo nngitunga", "ŋolo ŋituŋa"),
+            ("akidindinnga", "akidindinŋa"),
+            ("a-b d’e 'x- -", "a-b d'e ks"),
+            ("?!", ""),
+        ],
+    )
+    def test_normalise_text(self, raw, expected):
+        from tts_service.engines.karamojong_vits_engine import normalise_text
+
+        assert normalise_text(raw) == expected
+
+    def test_supports_only_configured_codes(self, monkeypatch):
+        from tts_service.engines import karamojong_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "KARAMOJONG_MODELS", {"kdj-k05": {"repo": "o/r", "speaker": None}}
+        )
+        engine = mod.KaramojongVitsEngine()
+        assert engine.supports_language("kdj-k05")
+        assert not engine.supports_language("kdj")
+
+    @pytest.mark.asyncio
+    async def test_rejects_unconfigured_language(self, monkeypatch):
+        from tts_service.engines import karamojong_vits_engine as mod
+
+        monkeypatch.setattr(mod, "KARAMOJONG_MODELS", {})
+        with pytest.raises(ValueError):
+            await mod.KaramojongVitsEngine().synthesize("ngitunga", "kdj-k05")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("text", ["?! -", "ngitunga 12"])
+    async def test_rejects_empty_text_and_digits(self, monkeypatch, text):
+        from tts_service.engines import karamojong_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "KARAMOJONG_MODELS", {"kdj-k05": {"repo": "o/r", "speaker": None}}
+        )
+        with pytest.raises(ValueError):
+            await mod.KaramojongVitsEngine().synthesize(text, "kdj-k05")
+
+    @pytest.mark.asyncio
+    async def test_synthesize_with_stub_model(self, monkeypatch):
+        """Full path with a stub single-speaker model: speed and WAV encoding."""
+        import base64
+
+        import numpy as np
+        import torch
+
+        from tts_service.engines import karamojong_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "KARAMOJONG_MODELS", {"kdj-k05": {"repo": "o/r", "speaker": None}}
+        )
+        seen = {}
+
+        class StubTokenizer:
+            def text_to_ids(self, text):
+                seen["text"] = text
+                return [1, 2, 3]
+
+        class StubModel:
+            speakers = ["K05"]
+            tokenizer = StubTokenizer()
+            config = type(
+                "C",
+                (),
+                {"model_args": type("A", (), {"use_speaker_embedding": False})()},
+            )()
+
+            def inference(self, x, aux_input):
+                seen["aux_keys"] = sorted(aux_input)
+                seen["length_scale"] = self.length_scale
+                return {"model_outputs": torch.zeros(1, 1, 1600)}
+
+        engine = mod.KaramojongVitsEngine()
+        engine._models["kdj-k05"] = StubModel()
+
+        result = await engine.synthesize("Ngitunga daadang", "kdj-k05", speed=2.0)
+
+        assert result["engine"] == "karamojong_vits"
+        assert result["format"] == "wav"
+        assert result["sample_rate"] == 16000
+        wav = base64.b64decode(result["audio_base64"])
+        assert wav[:4] == b"RIFF" and wav[8:12] == b"WAVE"
+        assert seen["text"] == "ŋituŋa daadaŋ"
+        assert seen["aux_keys"] == ["x_lengths"]  # single speaker: no speaker id
+        assert seen["length_scale"] == pytest.approx(0.5)
+        assert np.frombuffer(wav[44:], dtype=np.int16).shape[0] == 1600
+
+
+class TestKaramojongLanguages:
+    def test_karamojong_languages_listed_with_engine(self):
+        langs = client.get("/languages").json()
+        assert langs["kdj-k05"]["preferred_engine"] == "karamojong_vits"
+        assert langs["kdj"]["preferred_engine"] != "karamojong_vits"
