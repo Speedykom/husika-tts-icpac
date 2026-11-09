@@ -260,10 +260,14 @@ Returns `{"status": "ok"}`.
 | Dinka | `din` | — | yes | — | mms |
 | Turkana | `tuv` | — | — | yes | custom |
 | Karamojong | `kdj` | — | — | yes | custom |
+| Karamojong (K05 voice) | `kdj-k05` | — | — | yes | karamojong_vits |
 | Toposa (clear voice) | `toq-clear` | — | — | yes | toposa_vits |
 | Toposa (natural voice) | `toq-natural` | — | — | yes | toposa_vits |
 | Toposa (five-speaker model) | `toq-5spk` | — | — | yes | toposa_vits |
 | Pokot | `pko` | — | yes | — | mms |
+| Pokot (P1, PK03 voice, kdj base) | `pko-p1` | — | — | yes | pokot_vits |
+| Pokot (P2, PK03 voice, kpz base) | `pko-p2` | — | — | yes | pokot_vits |
+| Pokot (P3, five-speaker model) | `pko-p3` | — | — | yes | pokot_vits |
 | English | `en` | yes | yes | — | espeak |
 | French | `fr` | yes | yes | — | espeak |
 

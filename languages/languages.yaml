@@ -148,6 +148,43 @@ languages:
     toposa_vits_support: true
     status: "Beta"
 
+  # Pokot (pko): three fine-tuned checkpoints served by the pokot_vits engine.
+  # Research prototypes, not validated by native speakers. The plain ``pko`` entry
+  # above stays on the public MMS model.
+  pko-p1:
+    name: "Pokot, P1 (PK03 voice, kdj base)"
+    preferred_engine: "pokot_vits"
+    espeak_support: false
+    mms_support: false
+    pokot_vits_support: true
+    status: "Beta"
+
+  pko-p2:
+    name: "Pokot, P2 (PK03 voice, kpz base)"
+    preferred_engine: "pokot_vits"
+    espeak_support: false
+    mms_support: false
+    pokot_vits_support: true
+    status: "Beta"
+
+  pko-p3:
+    name: "Pokot, P3 (five-speaker model)"
+    preferred_engine: "pokot_vits"
+    espeak_support: false
+    mms_support: false
+    pokot_vits_support: true
+    status: "Beta"
+
+  # Karamojong (kdj): fine-tuned checkpoint of facebook/mms-tts-kdj served by the
+  # karamojong_vits engine.
+  kdj-k05:
+    name: "Karamojong, K05 voice"
+    preferred_engine: "karamojong_vits"
+    espeak_support: false
+    mms_support: false
+    karamojong_vits_support: true
+    status: "Beta"
+
 # Engine metadata
 engines:
   piper:
@@ -177,6 +214,20 @@ engines:
 
   toposa_vits:
     description: "Toposa VITS — MMS-kdj fine-tunes (clear, natural, five-speaker)"
+    model_source: "huggingface"
+    model_base: "facebook/mms-tts-kdj"
+    latency_ms: 3000
+    quality: "experimental"
+
+  pokot_vits:
+    description: "Pokot VITS — MMS fine-tunes (P1 kdj, P2 kpz, P3 five-speaker kdj)"
+    model_source: "huggingface"
+    model_base: "facebook/mms-tts-kdj, facebook/mms-tts-kpz"
+    latency_ms: 3000
+    quality: "experimental"
+
+  karamojong_vits:
+    description: "Karamojong VITS — MMS-kdj fine-tunes (K05 single speaker)"
     model_source: "huggingface"
     model_base: "facebook/mms-tts-kdj"
     latency_ms: 3000

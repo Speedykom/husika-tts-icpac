@@ -24,7 +24,10 @@ class TTSResponse(BaseModel):
     lang_code: str
     engine: str = Field(
         ...,
-        description="Engine used: piper, espeak, mms, coqui_vits, or toposa_vits",
+        description=(
+            "Engine used: piper, espeak, mms, coqui_vits, toposa_vits, pokot_vits,"
+            " or karamojong_vits"
+        ),
     )
 
 
