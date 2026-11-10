@@ -34,6 +34,7 @@ import numpy as np
 
 from .base import TTSEngine
 from .coqui_vits_engine import CoquiVitsEngine
+from .toposa_vits_engine import _parse_models
 
 logger = logging.getLogger(__name__)
 
@@ -47,19 +48,6 @@ REPO_FILES = [
     "mms_config.json",
     "karamojong_run.json",
 ]
-
-
-def _parse_models(raw: str) -> dict[str, dict]:
-    """Parse the KARAMOJONG_MODELS env value into ``{code: {"repo", "speaker"}}``."""
-    if not raw.strip():
-        return {}
-    models: dict[str, dict] = {}
-    for code, value in json.loads(raw).items():
-        if isinstance(value, str):
-            value = {"repo": value}
-        models[code] = {"repo": value["repo"], "speaker": value.get("speaker")}
-    return models
-
 
 KARAMOJONG_MODELS: dict[str, dict] = _parse_models(
     os.environ.get("KARAMOJONG_MODELS", "")

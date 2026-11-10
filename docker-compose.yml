@@ -19,6 +19,8 @@ services:
       PIPER_MODELS_DIR: /app/data/piper-models
       MMS_MODEL_OVERRIDES: ${MMS_MODEL_OVERRIDES:-}
       COQUI_MODELS: ${COQUI_MODELS:-}
+      TOPOSA_MODELS: ${TOPOSA_MODELS:-}
+      POKOT_MODELS: ${POKOT_MODELS:-}
       KARAMOJONG_MODELS: ${KARAMOJONG_MODELS:-}
       JWT_SECRET: ${JWT_SECRET:-change-before-deploying}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
