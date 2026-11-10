@@ -255,7 +255,7 @@
         <button type="button" data-value="5" aria-label="5 stars" onclick="selectStar(5)">★</button>
       </div>
       <div class="field" id="audio-upload-field">
-        <label>Record reference audio (optional, 16kHz mono WAV/MP3):</label>
+        <label>Record reference audio (16kHz mono WAV/MP3):</label>
         <div id="recorder-controls">
           <button id="btn-record" type="button" onclick="toggleRecording()">Record</button>
           <button id="btn-stop" type="button" onclick="stopRecording()" style="display:none">Stop</button>
@@ -267,7 +267,7 @@
         <input type="file" id="audio-upload" accept="audio/*" style="display:none" />
       </div>
       <div class="field" id="rating-comment">
-        <label for="comment">Comment <span style="font-weight:400;color:#666">(optional)</span></label>
+        <label for="comment">Comment</label>
         <textarea id="comment" placeholder="Pronunciation issues, background noise, etc."></textarea>
       </div>
       <button id="btn-submit-rating" onclick="submitRating()">Save rating</button>
