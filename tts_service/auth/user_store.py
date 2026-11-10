@@ -119,11 +119,16 @@ class UserStore:
                 "VALUES ('admin', ?, 1)",
                 (hashed,),
             )
-        logger.warning(
-            "Seeded default admin user: username=admin password=%s "
-            "— change this immediately!",
-            _DEFAULT_ADMIN_PASSWORD,
-        )
+        if "ADMIN_PASSWORD" in os.environ:
+            logger.warning(
+                "Seeded default admin user 'admin' using ADMIN_PASSWORD. "
+                "Change this password immediately."
+            )
+        else:
+            logger.warning(
+                "Seeded default admin user 'admin' with the built-in default "
+                "password. Set ADMIN_PASSWORD and change it immediately."
+            )
 
     @staticmethod
     def _to_dict(row) -> dict:
