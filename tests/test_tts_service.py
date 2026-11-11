@@ -497,3 +497,166 @@ class TestKaramojongLanguages:
         langs = client.get("/languages").json()
         assert langs["kdj-k05"]["preferred_engine"] == "karamojong_vits"
         assert langs["kdj"]["preferred_engine"] != "karamojong_vits"
+
+
+class TestTurkanaVitsEngine:
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("Tana Joko", "tana joko"),
+            ("ngibaren  kalo\n wukor", "ŋibaren kalo wukor"),
+            ("shu thaa chal", "ʃu θaa cal"),
+            ("nyakuj, ekile!", "nyakuj ekile"),
+            ("a-b d’e", "a-b d'e"),
+            ("ŋibaren", "ŋibaren"),
+            ("(tana) joko?", "tana joko"),
+            ("?! ...", ""),
+        ],
+    )
+    def test_normalise_text(self, raw, expected):
+        from tts_service.engines.turkana_vits_engine import normalise_text
+
+        assert normalise_text(raw) == expected
+
+    def test_normalise_text_rejects_digits(self):
+        from tts_service.engines.turkana_vits_engine import normalise_text
+
+        with pytest.raises(ValueError, match="digits"):
+            normalise_text("ekile 12")
+
+    def test_supports_only_configured_codes(self, monkeypatch):
+        from tts_service.engines import turkana_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "TURKANA_MODELS", {"tuv-open": {"repo": "o/r", "speaker": None}}
+        )
+        engine = mod.TurkanaVitsEngine()
+        assert engine.supports_language("tuv-open")
+        assert not engine.supports_language("tuv-col")
+
+    @pytest.mark.asyncio
+    async def test_rejects_unconfigured_language(self, monkeypatch):
+        from tts_service.engines import turkana_vits_engine as mod
+
+        monkeypatch.setattr(mod, "TURKANA_MODELS", {})
+        with pytest.raises(ValueError):
+            await mod.TurkanaVitsEngine().synthesize("tana joko", "tuv-open")
+
+    @pytest.mark.asyncio
+    async def test_rejects_text_without_turkana_letters(self, monkeypatch):
+        from tts_service.engines import turkana_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "TURKANA_MODELS", {"tuv-open": {"repo": "o/r", "speaker": None}}
+        )
+        with pytest.raises(ValueError):
+            await mod.TurkanaVitsEngine().synthesize("?! ...", "tuv-open")
+
+    @pytest.mark.asyncio
+    async def test_synthesize_with_stub_model(self, monkeypatch):
+        """Full path with a stub model: speaker choice, speed and WAV encoding."""
+        import base64
+
+        import numpy as np
+        import torch
+
+        from tts_service.engines import turkana_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "TURKANA_MODELS", {"tuv-col": {"repo": "o/r", "speaker": "T05"}}
+        )
+        seen = {}
+
+        class StubTokenizer:
+            def text_to_ids(self, text):
+                seen["text"] = text
+                return [1, 2, 3]
+
+        class StubModel:
+            speaker_ids = {"T01": 0, "T02": 1, "T05": 2}
+            tokenizer = StubTokenizer()
+            config = type(
+                "C",
+                (),
+                {"model_args": type("A", (), {"use_speaker_embedding": True})()},
+            )()
+
+            def inference(self, x, aux_input):
+                seen["speaker_ids"] = aux_input["speaker_ids"].tolist()
+                seen["length_scale"] = self.length_scale
+                return {"model_outputs": torch.zeros(1, 1, 1600)}
+
+        engine = mod.TurkanaVitsEngine()
+        engine._models["tuv-col"] = StubModel()
+
+        result = await engine.synthesize("Ngibaren shu", "tuv-col", speed=2.0)
+
+        assert result["engine"] == "turkana_vits"
+        assert result["format"] == "wav"
+        assert result["sample_rate"] == 16000
+        wav = base64.b64decode(result["audio_base64"])
+        assert wav[:4] == b"RIFF" and wav[8:12] == b"WAVE"
+        assert seen["text"] == "ŋibaren ʃu"
+        assert seen["speaker_ids"] == [2]  # configured speaker "T05"
+        assert seen["length_scale"] == pytest.approx(0.5)
+        assert np.frombuffer(wav[44:], dtype=np.int16).shape[0] == 1600
+
+    @pytest.mark.asyncio
+    async def test_first_voice_is_the_default(self, monkeypatch):
+        from tts_service.engines import turkana_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "TURKANA_MODELS", {"tuv-open": {"repo": "o/r", "speaker": None}}
+        )
+        seen = {}
+
+        class StubModel:
+            speaker_ids = {"GRN": 0}
+            tokenizer = type("T", (), {"text_to_ids": lambda self, t: [1]})()
+            config = type(
+                "C",
+                (),
+                {"model_args": type("A", (), {"use_speaker_embedding": True})()},
+            )()
+
+            def inference(self, x, aux_input):
+                import torch
+
+                seen["speaker_ids"] = aux_input["speaker_ids"].tolist()
+                return {"model_outputs": torch.zeros(1, 1, 160)}
+
+        engine = mod.TurkanaVitsEngine()
+        engine._models["tuv-open"] = StubModel()
+        await engine.synthesize("tana joko", "tuv-open")
+        assert seen["speaker_ids"] == [0]
+
+    @pytest.mark.asyncio
+    async def test_unknown_speaker_is_rejected(self, monkeypatch):
+        from tts_service.engines import turkana_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "TURKANA_MODELS", {"tuv-col": {"repo": "o/r", "speaker": "XX"}}
+        )
+
+        class StubModel:
+            speaker_ids = {"T01": 0}
+            tokenizer = type("T", (), {"text_to_ids": lambda self, t: [1]})()
+            config = type(
+                "C",
+                (),
+                {"model_args": type("A", (), {"use_speaker_embedding": True})()},
+            )()
+
+        engine = mod.TurkanaVitsEngine()
+        engine._models["tuv-col"] = StubModel()
+        with pytest.raises(ValueError, match="Unknown speaker"):
+            await engine.synthesize("tana joko", "tuv-col")
+
+
+class TestTurkanaLanguages:
+    def test_turkana_languages_listed_with_engine(self):
+        langs = client.get("/languages").json()
+        for code in ("tuv-open", "tuv-col"):
+            assert code in langs
+            assert langs[code]["preferred_engine"] == "turkana_vits"
+        assert langs["tuv"]["preferred_engine"] != "turkana_vits"
