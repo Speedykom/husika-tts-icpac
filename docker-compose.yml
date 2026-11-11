@@ -22,6 +22,7 @@ services:
       TOPOSA_MODELS: ${TOPOSA_MODELS:-}
       POKOT_MODELS: ${POKOT_MODELS:-}
       KARAMOJONG_MODELS: ${KARAMOJONG_MODELS:-}
+      TURKANA_MODELS: ${TURKANA_MODELS:-}
       JWT_SECRET: ${JWT_SECRET:-change-before-deploying}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
       DB_PATH: /app/data/husika.db

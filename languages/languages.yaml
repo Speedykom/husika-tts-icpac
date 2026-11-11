@@ -185,6 +185,25 @@ languages:
     karamojong_vits_support: true
     status: "Beta"
 
+  # Turkana (tuv): two fine-tuned checkpoints of facebook/mms-tts-kdj, served by the
+  # turkana_vits engine. Research prototypes, not validated by native speakers. The
+  # plain ``tuv`` entry above is unchanged.
+  tuv-open:
+    name: "Turkana, open-data model (one voice)"
+    preferred_engine: "turkana_vits"
+    espeak_support: false
+    mms_support: false
+    turkana_vits_support: true
+    status: "Beta"
+
+  tuv-col:
+    name: "Turkana, collected-data model (14 voices)"
+    preferred_engine: "turkana_vits"
+    espeak_support: false
+    mms_support: false
+    turkana_vits_support: true
+    status: "Beta"
+
 # Engine metadata
 engines:
   piper:
@@ -228,6 +247,13 @@ engines:
 
   karamojong_vits:
     description: "Karamojong VITS — MMS-kdj fine-tunes (K05 single speaker)"
+    model_source: "huggingface"
+    model_base: "facebook/mms-tts-kdj"
+    latency_ms: 3000
+    quality: "experimental"
+
+  turkana_vits:
+    description: "Turkana VITS — MMS-kdj fine-tunes (open-data, collected-data)"
     model_source: "huggingface"
     model_base: "facebook/mms-tts-kdj"
     latency_ms: 3000
