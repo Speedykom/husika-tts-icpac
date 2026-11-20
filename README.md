@@ -259,10 +259,10 @@ Returns `{"status": "ok"}`.
 | Nuer | `nue` | — | yes | — | mms |
 | Dinka | `din` | — | yes | — | mms |
 | Turkana | `tuv` | — | — | yes | custom |
-| Karamojong | `kdj` | — | — | yes | custom |
-| Karamojong (K05 voice) | `kdj-k05` | — | — | yes | karamojong_vits |
 | Turkana (open-data model, one voice) | `tuv-open` | — | — | yes | turkana_vits |
 | Turkana (collected-data model, 14 voices) | `tuv-col` | — | — | yes | turkana_vits |
+| Karamojong | `kdj` | — | — | yes | custom |
+| Karamojong (K05 voice) | `kdj-k05` | — | — | yes | karamojong_vits |
 | Toposa (clear voice) | `toq-clear` | — | — | yes | toposa_vits |
 | Toposa (natural voice) | `toq-natural` | — | — | yes | toposa_vits |
 | Toposa (five-speaker model) | `toq-5spk` | — | — | yes | toposa_vits |

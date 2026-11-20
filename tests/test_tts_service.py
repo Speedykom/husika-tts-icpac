@@ -511,6 +511,11 @@ class TestTurkanaVitsEngine:
             ("ŋibaren", "ŋibaren"),
             ("(tana) joko?", "tana joko"),
             ("?! ...", ""),
+            ("ekile—tana", "ekile tana"),
+            ("tana & joko*", "tana joko"),
+            ("«tana» joko", "tana joko"),
+            ("ngʼa ekile–tana", "ŋ'a ekile-tana"),
+            ("***", ""),
         ],
     )
     def test_normalise_text(self, raw, expected):
@@ -549,8 +554,9 @@ class TestTurkanaVitsEngine:
         monkeypatch.setattr(
             mod, "TURKANA_MODELS", {"tuv-open": {"repo": "o/r", "speaker": None}}
         )
-        with pytest.raises(ValueError):
-            await mod.TurkanaVitsEngine().synthesize("?! ...", "tuv-open")
+        for text in ("?! ...", "*** — &"):
+            with pytest.raises(ValueError):
+                await mod.TurkanaVitsEngine().synthesize(text, "tuv-open")
 
     @pytest.mark.asyncio
     async def test_synthesize_with_stub_model(self, monkeypatch):

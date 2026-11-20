@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 SAMPLE_RATE = 16000
 
 # Only these files are needed for inference; skips samples, metrics and the README.
+# ``speakers.pth`` may be missing; the speakers in ``turkana_run.json`` are then used.
 REPO_FILES = [
     "model.pth",
     "config.json",
@@ -56,23 +57,24 @@ TURKANA_MODELS: dict[str, dict] = _parse_models(os.environ.get("TURKANA_MODELS",
 # Turkana digraphs are written as single symbols, as during training. The order
 # matters and matches the training code: sh, th, ch, then ng.
 _DIGRAPHS = (("sh", "ʃ"), ("th", "θ"), ("ch", "c"), ("ng", "ŋ"))
-_DROP = re.compile(r"[.,;:?!()/%…\"“”\[\]]")
+# Apostrophe variants become ``'``; en dash becomes a hyphen.
+_APOSTROPHES = str.maketrans({"’": "'", "‘": "'", "ʼ": "'", "–": "-"})
 
 
 def normalise_text(text: str) -> str:
-    """Normalise Turkana text exactly as during training.
+    """Normalise Turkana text as during training.
 
-    Lowercase; the punctuation ``. , ; : ? ! ( ) / % …``, quotes and brackets is
-    removed; curly apostrophes become ``'``; spaces collapse. The digraphs
+    Lowercase letters, spaces, hyphens and apostrophes are kept; everything else
+    (punctuation, symbols, letters outside the model vocabulary) becomes a space,
+    and spaces collapse. Apostrophe variants become ``'``. The digraphs
     ``sh th ch ng`` become the single symbols ``ʃ θ c ŋ`` of the extended model
     vocabulary. Text with digits is rejected: no digit sentences were in the
     training data and there is no verified way to read numbers aloud.
     """
     if any(c.isdigit() for c in text):
         raise ValueError("Text contains digits; the Turkana models cannot read numbers")
-    text = unicodedata.normalize("NFC", text).lower()
-    text = text.replace("’", "'").replace("‘", "'")
-    text = _DROP.sub(" ", text)
+    text = unicodedata.normalize("NFC", text).lower().translate(_APOSTROPHES)
+    text = re.sub(r"[^a-zŋʃθ\-' ]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     for src, dst in _DIGRAPHS:
         text = text.replace(src, dst)
@@ -110,17 +112,21 @@ class TurkanaVitsEngine(TTSEngine):
         config.load_json(os.path.join(repo_dir, "config.json"))
         mms = read_json("mms_config.json")
 
-        # Speaker name -> id, in the order used in training. The speaker count must
-        # be set before the model is built: coqui-tts 0.27.x only creates the
-        # speaker-embedding layer when ``num_speakers`` is known up front (the saved
-        # config has it unset and points ``speakers_file`` at a training-time path).
-        table = torch.load(
-            os.path.join(repo_dir, "speakers.pth"),
-            map_location="cpu",
-            weights_only=False,
-        )
-        speaker_ids = {name: int(i) for name, i in table.items()}
-        config.model_args.num_speakers = len(speaker_ids)
+        # Speaker name -> id. Prefer the table saved with the checkpoint (it is the
+        # id order used in training); fall back to the order in the run metadata.
+        # The speaker count must be set before the model is built: coqui-tts 0.27.x
+        # only creates the speaker-embedding layer when ``num_speakers`` is known up
+        # front (the saved config has it unset and points ``speakers_file`` at a
+        # training-time path).
+        speakers_file = os.path.join(repo_dir, "speakers.pth")
+        if os.path.exists(speakers_file):
+            table = torch.load(speakers_file, map_location="cpu", weights_only=False)
+            speaker_ids = {name: int(i) for name, i in table.items()}
+        else:
+            names = read_json("turkana_run.json").get("speakers") or []
+            speaker_ids = {name: i for i, name in enumerate(names)}
+        if speaker_ids:
+            config.model_args.num_speakers = len(speaker_ids)
 
         model = Vits(config)
         vocab_file = os.path.join(repo_dir, "mms_vocab.txt")
