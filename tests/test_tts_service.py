@@ -514,7 +514,8 @@ class TestTurkanaVitsEngine:
             ("ekile—tana", "ekile tana"),
             ("tana & joko*", "tana joko"),
             ("«tana» joko", "tana joko"),
-            ("ngʼa ekile–tana", "ŋ'a ekile-tana"),
+            ("ngʼa ekile–tana", "ŋ'a ekile–tana"),
+            ("taxi", "taksi"),
             ("***", ""),
         ],
     )

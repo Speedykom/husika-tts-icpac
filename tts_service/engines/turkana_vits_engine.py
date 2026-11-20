@@ -57,24 +57,26 @@ TURKANA_MODELS: dict[str, dict] = _parse_models(os.environ.get("TURKANA_MODELS",
 # Turkana digraphs are written as single symbols, as during training. The order
 # matters and matches the training code: sh, th, ch, then ng.
 _DIGRAPHS = (("sh", "ʃ"), ("th", "θ"), ("ch", "c"), ("ng", "ŋ"))
-# Apostrophe variants become ``'``; en dash becomes a hyphen.
-_APOSTROPHES = str.maketrans({"’": "'", "‘": "'", "ʼ": "'", "–": "-"})
+# Apostrophe variants become ``'``. ``x`` is not in the model vocabulary (no
+# training sentence had it), so it is spelled out as ``ks``.
+_CHAR_MAP = str.maketrans({"’": "'", "‘": "'", "ʼ": "'", "x": "ks"})
 
 
 def normalise_text(text: str) -> str:
     """Normalise Turkana text as during training.
 
-    Lowercase letters, spaces, hyphens and apostrophes are kept; everything else
-    (punctuation, symbols, letters outside the model vocabulary) becomes a space,
-    and spaces collapse. Apostrophe variants become ``'``. The digraphs
+    Only symbols of the model vocabulary are kept: lowercase letters, spaces,
+    hyphens, en dashes and apostrophes. Everything else (punctuation, symbols,
+    other letters) becomes a space, and spaces collapse. Apostrophe variants
+    become ``'`` and ``x`` becomes ``ks``. The digraphs
     ``sh th ch ng`` become the single symbols ``ʃ θ c ŋ`` of the extended model
     vocabulary. Text with digits is rejected: no digit sentences were in the
     training data and there is no verified way to read numbers aloud.
     """
     if any(c.isdigit() for c in text):
         raise ValueError("Text contains digits; the Turkana models cannot read numbers")
-    text = unicodedata.normalize("NFC", text).lower().translate(_APOSTROPHES)
-    text = re.sub(r"[^a-zŋʃθ\-' ]", " ", text)
+    text = unicodedata.normalize("NFC", text).lower().translate(_CHAR_MAP)
+    text = re.sub(r"[^a-wyzŋʃθ\-–' ]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     for src, dst in _DIGRAPHS:
         text = text.replace(src, dst)
