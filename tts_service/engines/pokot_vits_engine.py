@@ -37,7 +37,7 @@ import numpy as np
 
 from .base import TTSEngine
 from .coqui_vits_engine import CoquiVitsEngine
-from .toposa_vits_engine import _parse_models
+from .toposa_vits_engine import _parse_models, _set_speaker_count
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +105,18 @@ class PokotVitsEngine(TTSEngine):
         config.load_json(os.path.join(repo_dir, "config.json"))
         mms = read_json("mms_config.json")
 
+        # Speaker name -> id. Prefer the table saved with the checkpoint (it is the
+        # id order used in training); fall back to the order in the run metadata.
+        # Read before the model is built: the speaker count decides its layers.
+        speakers_file = os.path.join(repo_dir, "speakers.pth")
+        if os.path.exists(speakers_file):
+            table = torch.load(speakers_file, map_location="cpu", weights_only=False)
+            speaker_ids = {name: int(i) for name, i in table.items()}
+        else:
+            names = read_json("pokot_run.json").get("speakers") or []
+            speaker_ids = {name: i for i, name in enumerate(names)}
+        _set_speaker_count(config, len(speaker_ids))
+
         model = Vits(config)
         vocab_file = os.path.join(repo_dir, "mms_vocab.txt")
         if hasattr(FairseqVocab, "init_from_vocab_file"):  # coqui-tts >= 0.28
@@ -131,16 +143,7 @@ class PokotVitsEngine(TTSEngine):
         state = {k: v for k, v in state.items() if not k.startswith("disc.")}
         model.disc = None
         model.load_state_dict(state, strict=True)
-
-        # Speaker name -> id. Prefer the table saved with the checkpoint (it is the
-        # id order used in training); fall back to the order in the run metadata.
-        speakers_file = os.path.join(repo_dir, "speakers.pth")
-        if os.path.exists(speakers_file):
-            table = torch.load(speakers_file, map_location="cpu", weights_only=False)
-            model.speaker_ids = {name: int(i) for name, i in table.items()}
-        else:
-            names = read_json("pokot_run.json").get("speakers") or []
-            model.speaker_ids = {name: i for i, name in enumerate(names)}
+        model.speaker_ids = speaker_ids
         return model.eval()
 
     def _load_model(self, language_code: str) -> None:

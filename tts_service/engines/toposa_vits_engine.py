@@ -61,6 +61,22 @@ def _parse_models(raw: str) -> dict[str, dict]:
 TOPOSA_MODELS: dict[str, dict] = _parse_models(os.environ.get("TOPOSA_MODELS", ""))
 
 
+def _set_speaker_count(config, num_speakers: int) -> None:
+    """Make a multi-speaker config loadable outside training.
+
+    coqui-tts 0.27.x builds the speaker embedding, and every layer conditioned on it,
+    only when the speaker count is known before ``Vits(config)`` is created. The saved
+    training configs leave the count empty and point ``speakers_file`` at the training
+    machine, so without this the checkpoint fails to load with unexpected
+    ``emb_g.weight`` / ``cond_layer`` keys. Single-speaker configs are left unchanged.
+    """
+    if config.model_args.use_speaker_embedding:
+        if num_speakers <= 0:
+            raise ValueError("Multi-speaker checkpoint without a speaker list")
+        config.model_args.num_speakers = num_speakers
+        config.model_args.speakers_file = None
+
+
 def normalise_text(text: str) -> str:
     """Normalise Toposa text exactly as during training.
 
@@ -104,6 +120,8 @@ class ToposaVitsEngine(TTSEngine):
         config = VitsConfig()
         config.load_json(os.path.join(repo_dir, "config.json"))
         mms = read_json("mms_config.json")
+        speakers = read_json("toposa_run.json").get("speakers") or []
+        _set_speaker_count(config, len(speakers))
 
         model = Vits(config)
         vocab_file = os.path.join(repo_dir, "mms_vocab.txt")
@@ -131,7 +149,7 @@ class ToposaVitsEngine(TTSEngine):
         )["model"]
         model.load_state_dict(state, strict=True)
 
-        model.speakers = read_json("toposa_run.json").get("speakers") or []
+        model.speakers = speakers
         return model.eval()
 
     def _load_model(self, language_code: str) -> None:
