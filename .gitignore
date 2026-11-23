@@ -40,3 +40,7 @@ htmlcov/
 # Ratings — live data lives on the VPS host via bind mount, not in git
 ratings/*.csv
 !ratings/.gitkeep
+
+# Backups — created locally when testing backup.sh with DEPLOY_DIR=$(pwd).
+# On the server DEPLOY_DIR=/srv/husika, so these never appear in the repo.
+backups/
