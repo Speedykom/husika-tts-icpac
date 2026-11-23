@@ -26,7 +26,7 @@ class TTSResponse(BaseModel):
         ...,
         description=(
             "Engine used: piper, espeak, mms, coqui_vits, toposa_vits, pokot_vits,"
-            " or karamojong_vits"
+            " karamojong_vits, or turkana_vits"
         ),
     )
 

@@ -14,6 +14,7 @@ from .mms_engine import MmsEngine
 from .piper_engine import PiperEngine
 from .pokot_vits_engine import PokotVitsEngine
 from .toposa_vits_engine import ToposaVitsEngine
+from .turkana_vits_engine import TurkanaVitsEngine
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class EngineRouter:
             "toposa_vits": ToposaVitsEngine(),
             "pokot_vits": PokotVitsEngine(),
             "karamojong_vits": KaramojongVitsEngine(),
+            "turkana_vits": TurkanaVitsEngine(),
         }
 
     def _load_config(self) -> dict:
