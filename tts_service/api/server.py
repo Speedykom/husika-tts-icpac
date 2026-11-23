@@ -1,13 +1,24 @@
 """FastAPI TTS service for HUSIKA — Sprint 1 skeleton."""
 
+import asyncio
 import logging
 import os
 import shutil
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import AsyncIterator, Optional
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, status, Request
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
@@ -17,7 +28,9 @@ from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
 
 from ..auth import UserStore
+from ..db import _db
 from ..engines.engine_router import EngineRouter
+from ..logging_config import configure_logging
 from ..ratings import RatingsStore
 from .schemas import (
     CreateUserRequest,
@@ -30,7 +43,7 @@ from .schemas import (
     UserRecord,
 )
 
-logging.basicConfig(level=logging.INFO)
+configure_logging()
 logger = logging.getLogger(__name__)
 
 # Auth configuration
@@ -42,6 +55,51 @@ _API_KEY = os.environ.get("API_KEY", "")
 
 _oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 _user_store = UserStore()
+
+# Log retention: prune rows older than LOG_RETENTION_DAYS (0 disables pruning)
+# every LOG_PRUNE_INTERVAL_HOURS while the service runs, keeping the shared
+# SQLite database bounded.
+_LOG_RETENTION_DAYS = int(os.environ.get("LOG_RETENTION_DAYS", "30"))
+_LOG_PRUNE_INTERVAL_HOURS = float(os.environ.get("LOG_PRUNE_INTERVAL_HOURS", "24"))
+
+
+async def _prune_logs_periodically() -> None:
+    """Prune old log rows on startup and then once per interval, forever."""
+    while True:
+        try:
+            # Run the blocking SQLite delete off the event loop.
+            deleted = await asyncio.to_thread(_db.prune_logs, _LOG_RETENTION_DAYS)
+            if deleted:
+                logger.info(
+                    "Pruned old log rows",
+                    extra={
+                        "event": "logs_pruned",
+                        "deleted": deleted,
+                        "retention_days": _LOG_RETENTION_DAYS,
+                    },
+                )
+        except Exception:
+            logger.exception("Log pruning failed")
+        await asyncio.sleep(_LOG_PRUNE_INTERVAL_HOURS * 3600)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Run the background log-pruning job for the lifetime of the app."""
+    prune_task = (
+        asyncio.create_task(_prune_logs_periodically())
+        if _LOG_RETENTION_DAYS > 0
+        else None
+    )
+    try:
+        yield
+    finally:
+        if prune_task is not None:
+            prune_task.cancel()
+            try:
+                await prune_task
+            except asyncio.CancelledError:
+                pass
 
 
 def _create_token(username: str) -> str:
@@ -91,7 +149,6 @@ async def _require_any_auth(request: Request) -> None:
         detail="Provide a valid X-API-Key header or Bearer token",
         headers={"WWW-Authenticate": "Bearer"},
     )
-
 
 
 _DESCRIPTION = """\
@@ -152,11 +209,15 @@ app = FastAPI(
     title="Husika TTS API",
     description=_DESCRIPTION,
     version="0.1.0",
+    lifespan=_lifespan,
     docs_url=None,
     openapi_tags=[
         {"name": "TTS", "description": "Text-to-speech synthesis endpoints"},
         {"name": "Auth", "description": "Obtain a short-lived JWT Bearer token"},
-        {"name": "Ratings", "description": "Submit and query synthesis quality ratings"},
+        {
+            "name": "Ratings",
+            "description": "Submit and query synthesis quality ratings",
+        },
         {"name": "Health", "description": "Service health and language metadata"},
     ],
 )
@@ -189,7 +250,8 @@ def _custom_openapi() -> dict:
             "in": "header",
             "name": "X-API-Key",
             "description": (
-                "Paste **only the key value** (e.g. `hsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`). "
+                "Paste **only the key value** "
+                "(e.g. `hsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`). "
                 "Do **not** include `API_KEY=`. "
                 "Generate a new key with: `python scripts/generate_api_key.py`."
             ),
@@ -291,11 +353,23 @@ async def login(form: OAuth2PasswordRequestForm = Depends()) -> TokenResponse:
     """Exchange username + password for a Bearer JWT."""
     user = _user_store.authenticate(form.username, form.password)
     if not user:
+        logger.warning(
+            "login failed",
+            extra={"event": "login_failed", "username": form.username},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    logger.info(
+        "login succeeded",
+        extra={
+            "event": "login",
+            "username": user["username"],
+            "is_admin": bool(user.get("is_admin", False)),
+        },
+    )
     return TokenResponse(
         access_token=_create_token(user["username"]),
         is_admin=bool(user.get("is_admin", False)),
@@ -337,6 +411,17 @@ async def synthesize(
             language_code=lang_code,
             speed=request.speed,
         )
+        logger.info(
+            "synthesis completed",
+            extra={
+                "event": "synthesis",
+                "requested_lang": request.lang_code,
+                "resolved_lang": lang_code,
+                "engine": result["engine"],
+                "chars": len(request.text),
+                "speed": request.speed,
+            },
+        )
         return TTSResponse(
             audio_base64=result["audio_base64"],
             format=result["format"],
@@ -346,11 +431,13 @@ async def synthesize(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Synthesis failed: {e}", exc_info=True)
+    except Exception:
+        logger.error(
+            "synthesis failed",
+            exc_info=True,
+            extra={"event": "synthesis_failed", "requested_lang": request.lang_code},
+        )
         raise HTTPException(status_code=500, detail="Synthesis failed")
-
-
 
 
 @app.get("/health", tags=["Health"], summary="Health check")
@@ -363,8 +450,6 @@ async def health_check() -> dict:
 async def list_languages() -> dict:
     """Returns metadata for every supported language including engine and model info."""
     return router.get_language_info()
-
-
 
 
 @app.post(
@@ -386,6 +471,17 @@ async def submit_rating(
         rating=request.rating,
         comment=request.comment,
         audio_file=getattr(request, "audio_file", None),
+    )
+    logger.info(
+        "rating saved",
+        extra={
+            "event": "rating_saved",
+            "reviewer": request.reviewer,
+            "language": request.language,
+            "rating": request.rating,
+            "has_comment": bool(request.comment),
+            "has_audio": bool(getattr(request, "audio_file", None)),
+        },
     )
     return RatingResponse(
         reviewer=record["reviewer"],
@@ -449,6 +545,15 @@ async def admin_create_user(
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     user = _user_store.get_user(result["username"])
+    logger.info(
+        "user created",
+        extra={
+            "event": "user_created",
+            "username": user["username"],
+            "is_admin": user["is_admin"],
+            "by": _admin["username"],
+        },
+    )
     return UserRecord(
         username=user["username"],
         is_admin=user["is_admin"],
@@ -465,6 +570,14 @@ async def admin_reset_password(
     """Set a new password for the given user."""
     if not _user_store.update_password(username, request.password):
         raise HTTPException(status_code=404, detail=f"User '{username}' not found")
+    logger.info(
+        "password reset",
+        extra={
+            "event": "password_reset",
+            "username": username,
+            "by": _admin["username"],
+        },
+    )
 
 
 @app.delete("/admin/users/{username}", status_code=204)
@@ -476,6 +589,10 @@ async def admin_delete_user(
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
     if not _user_store.delete_user(username):
         raise HTTPException(status_code=404, detail=f"User '{username}' not found")
+    logger.info(
+        "user deleted",
+        extra={"event": "user_deleted", "username": username, "by": admin["username"]},
+    )
 
 
 @app.post("/upload-audio")
@@ -491,6 +608,15 @@ async def upload_audio(
     dest = uploads_dir / fname
     with dest.open("wb") as out_file:
         shutil.copyfileobj(file.file, out_file)
+    logger.info(
+        "audio uploaded",
+        extra={
+            "event": "audio_upload",
+            "username": _user["username"],
+            "file": f"uploads/{fname}",
+            "size_bytes": dest.stat().st_size,
+        },
+    )
     return {"audio_file": f"uploads/{fname}"}
 
 
