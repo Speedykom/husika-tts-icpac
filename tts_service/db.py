@@ -74,19 +74,43 @@ class Database:
     def _migrate_ratings(self, conn: sqlite3.Connection) -> None:
         """Rebuild a legacy ratings table (composite PK, no `id`) into the
         append-only history schema, preserving existing rows."""
-        cols = [r["name"] for r in conn.execute("PRAGMA table_info(ratings)")]
-        if not cols or "id" in cols:
+
+        def _needs_migration() -> bool:
+            cols = [r["name"] for r in conn.execute("PRAGMA table_info(ratings)")]
+            return bool(cols) and "id" not in cols  # legacy table present
+
+        if not _needs_migration():
             return  # fresh database or already migrated
-        logger.info("Migrating ratings table to append-only history schema")
-        conn.executescript(
-            "ALTER TABLE ratings RENAME TO ratings_legacy;\n"
-            + _RATINGS_TABLE
-            + "INSERT INTO ratings "
-            "(reviewer, language, phrase, rating, comment, timestamp, audio_file) "
-            "SELECT reviewer, language, phrase, rating, comment, timestamp, audio_file "
-            "FROM ratings_legacy;\n"
-            "DROP TABLE ratings_legacy;\n"
-        )
+        # Run the rebuild as one write transaction: executescript() otherwise
+        # autocommits each statement, so a failure halfway would strand the
+        # data in ratings_legacy with no retry on the next start. BEGIN
+        # IMMEDIATE also serialises concurrent workers; re-check once we hold
+        # the lock in case another process already migrated.
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if not _needs_migration():
+                conn.execute("COMMIT")
+                return
+            logger.info("Migrating ratings table to append-only history schema")
+            statements = [
+                "ALTER TABLE ratings RENAME TO ratings_legacy",
+                *(s for s in _RATINGS_TABLE.split(";") if s.strip()),
+                # Oldest first, so id order (used for newest-first queries)
+                # matches the original review timestamps.
+                "INSERT INTO ratings "
+                "(reviewer, language, phrase, rating, comment, timestamp, "
+                "audio_file) "
+                "SELECT reviewer, language, phrase, rating, comment, timestamp, "
+                "audio_file FROM ratings_legacy ORDER BY timestamp",
+                "DROP TABLE ratings_legacy",
+            ]
+            for statement in statements:
+                conn.execute(statement)
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
