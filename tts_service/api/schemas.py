@@ -22,7 +22,13 @@ class TTSResponse(BaseModel):
     format: str = Field(default="wav")
     sample_rate: int = Field(default=22050)
     lang_code: str
-    engine: str = Field(..., description="Engine used: espeak or mms")
+    engine: str = Field(
+        ...,
+        description=(
+            "Engine used: piper, espeak, mms, coqui_vits, toposa_vits, pokot_vits,"
+            " karamojong_vits, or turkana_vits"
+        ),
+    )
 
 
 class RatingRequest(BaseModel):

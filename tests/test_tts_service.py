@@ -137,6 +137,593 @@ class TestTTSEndpoint:
         assert r.status_code == 422
 
 
+# ── Toposa VITS engine ────────────────────────────────────────
+
+
+class TestToposaVitsEngine:
+    def test_parse_models_accepts_string_and_object_values(self):
+        from tts_service.engines.toposa_vits_engine import _parse_models
+
+        models = _parse_models(
+            '{"toq-clear": "org/clear",'
+            ' "toq-5spk": {"repo": "org/five", "speaker": "LA"}}'
+        )
+        assert models["toq-clear"] == {"repo": "org/clear", "speaker": None}
+        assert models["toq-5spk"] == {"repo": "org/five", "speaker": "LA"}
+
+    def test_parse_models_empty_env_is_no_models(self):
+        from tts_service.engines.toposa_vits_engine import _parse_models
+
+        assert _parse_models("") == {}
+        assert _parse_models("  ") == {}
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("Tana Joko", "tana joko"),
+            ("ngibaren  kalo\n wukor", "ŋibaren kalo wukor"),
+            ("Ngakipi, koni 12!", "ŋakipi koni"),
+            ("ŋibaren", "ŋibaren"),
+            ("a-b d'e", "a-b d'e"),
+            ("123 ?!", ""),
+        ],
+    )
+    def test_normalise_text(self, raw, expected):
+        from tts_service.engines.toposa_vits_engine import normalise_text
+
+        assert normalise_text(raw) == expected
+
+    def test_supports_only_configured_codes(self, monkeypatch):
+        from tts_service.engines import toposa_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "TOPOSA_MODELS", {"toq-clear": {"repo": "o/r", "speaker": None}}
+        )
+        engine = mod.ToposaVitsEngine()
+        assert engine.supports_language("toq-clear")
+        assert not engine.supports_language("toq-natural")
+
+    @pytest.mark.asyncio
+    async def test_rejects_unconfigured_language(self, monkeypatch):
+        from tts_service.engines import toposa_vits_engine as mod
+
+        monkeypatch.setattr(mod, "TOPOSA_MODELS", {})
+        with pytest.raises(ValueError):
+            await mod.ToposaVitsEngine().synthesize("tana joko", "toq-clear")
+
+    @pytest.mark.asyncio
+    async def test_rejects_text_without_toposa_letters(self, monkeypatch):
+        from tts_service.engines import toposa_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "TOPOSA_MODELS", {"toq-clear": {"repo": "o/r", "speaker": None}}
+        )
+        with pytest.raises(ValueError):
+            await mod.ToposaVitsEngine().synthesize("123 !?", "toq-clear")
+
+    @pytest.mark.asyncio
+    async def test_synthesize_with_stub_model(self, monkeypatch):
+        """Full path with a stub model: speaker choice, speed and WAV encoding."""
+        import base64
+
+        import numpy as np
+        import torch
+
+        from tts_service.engines import toposa_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod,
+            "TOPOSA_MODELS",
+            {"toq-5spk": {"repo": "o/r", "speaker": "LA"}},
+        )
+        seen = {}
+
+        class StubTokenizer:
+            def text_to_ids(self, text):
+                seen["text"] = text
+                return [1, 2, 3]
+
+        class StubModel:
+            speakers = ["AP", "LA"]
+            tokenizer = StubTokenizer()
+            config = type(
+                "C",
+                (),
+                {"model_args": type("A", (), {"use_speaker_embedding": True})()},
+            )()
+
+            def inference(self, x, aux_input):
+                seen["speaker_ids"] = aux_input["speaker_ids"].tolist()
+                seen["length_scale"] = self.length_scale
+                return {"model_outputs": torch.zeros(1, 1, 1600)}
+
+        engine = mod.ToposaVitsEngine()
+        engine._models["toq-5spk"] = StubModel()
+
+        result = await engine.synthesize("Ngibaren kalo", "toq-5spk", speed=2.0)
+
+        assert result["engine"] == "toposa_vits"
+        assert result["format"] == "wav"
+        assert result["sample_rate"] == 16000
+        wav = base64.b64decode(result["audio_base64"])
+        assert wav[:4] == b"RIFF" and wav[8:12] == b"WAVE"
+        assert seen["text"] == "ŋibaren kalo"
+        assert seen["speaker_ids"] == [1]  # configured speaker "LA"
+        assert seen["length_scale"] == pytest.approx(0.5)
+        assert np.frombuffer(wav[44:], dtype=np.int16).shape[0] == 1600
+
+
+class TestToposaLanguages:
+    def test_toposa_languages_listed_with_engine(self):
+        langs = client.get("/languages").json()
+        for code in ("toq-clear", "toq-natural", "toq-5spk"):
+            assert code in langs
+            assert langs[code]["preferred_engine"] == "toposa_vits"
+
+
+class TestMultiSpeakerConfig:
+    """Saved multi-speaker training configs have no speaker count (toq-5spk, pko-p3)."""
+
+    @staticmethod
+    def _training_config(use_speaker_embedding=True):
+        from TTS.tts.configs.vits_config import VitsConfig
+
+        config = VitsConfig()
+        config.model_args.use_speaker_embedding = use_speaker_embedding
+        config.model_args.num_speakers = 0
+        config.model_args.speakers_file = "/vol/runs/some-training-run/speakers.pth"
+        return config
+
+    def test_speaker_layers_are_built(self):
+        from TTS.tts.models.vits import Vits
+
+        from tts_service.engines.toposa_vits_engine import _set_speaker_count
+
+        config = self._training_config()
+        assert not hasattr(Vits(config), "emb_g")  # the bug: no speaker embedding
+        _set_speaker_count(config, 5)
+        model = Vits(config)
+        channels = config.model_args.speaker_embedding_channels
+        assert tuple(model.emb_g.weight.shape) == (5, channels)
+        assert config.model_args.speakers_file is None
+
+    def test_single_speaker_config_is_unchanged(self):
+        from tts_service.engines.toposa_vits_engine import _set_speaker_count
+
+        config = self._training_config(use_speaker_embedding=False)
+        _set_speaker_count(config, 0)
+        assert config.model_args.num_speakers == 0
+        assert config.model_args.speakers_file.startswith("/vol/")
+
+    def test_multi_speaker_without_speakers_is_rejected(self):
+        from tts_service.engines.toposa_vits_engine import _set_speaker_count
+
+        with pytest.raises(ValueError):
+            _set_speaker_count(self._training_config(), 0)
+
+    def test_speaker_list_is_checked_against_checkpoint(self):
+        import torch
+
+        from tts_service.engines.toposa_vits_engine import _check_speaker_count
+
+        state = {"emb_g.weight": torch.zeros(5, 256)}
+        _check_speaker_count(state, 5, "toposa_run.json")  # matches: no error
+        with pytest.raises(ValueError, match="lists 4 speakers .* trained with 5"):
+            _check_speaker_count(state, 4, "toposa_run.json")
+        _check_speaker_count({}, 1, "toposa_run.json")  # single speaker: no embedding
+
+
+# ── Pokot VITS engine ─────────────────────────────────────────
+
+
+class TestPokotVitsEngine:
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("Poru Rop", "poru rop"),
+            ("ngala  achey\n kininyogh", "ŋala acey kininyoɣ"),
+            ("ighesyeghut chona", "iɣesyeɣut cona"),
+            ("shamba thiny", "ʃamba θiny"),
+            ("ŋala", "ŋala"),
+            ("a-b d'e", "a-b d'e"),
+            ("Somalia, 12 !", "somalia"),
+            ("123 ?!", ""),
+        ],
+    )
+    def test_normalise_text(self, raw, expected):
+        from tts_service.engines.pokot_vits_engine import normalise_text
+
+        assert normalise_text(raw) == expected
+
+    def test_supports_only_configured_codes(self, monkeypatch):
+        from tts_service.engines import pokot_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "POKOT_MODELS", {"pko-p1": {"repo": "o/r", "speaker": None}}
+        )
+        engine = mod.PokotVitsEngine()
+        assert engine.supports_language("pko-p1")
+        assert not engine.supports_language("pko-p3")
+
+    @pytest.mark.asyncio
+    async def test_rejects_unconfigured_language(self, monkeypatch):
+        from tts_service.engines import pokot_vits_engine as mod
+
+        monkeypatch.setattr(mod, "POKOT_MODELS", {})
+        with pytest.raises(ValueError):
+            await mod.PokotVitsEngine().synthesize("poru rop", "pko-p1")
+
+    @pytest.mark.asyncio
+    async def test_rejects_text_without_pokot_letters(self, monkeypatch):
+        from tts_service.engines import pokot_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "POKOT_MODELS", {"pko-p1": {"repo": "o/r", "speaker": None}}
+        )
+        with pytest.raises(ValueError):
+            await mod.PokotVitsEngine().synthesize("123 !?", "pko-p1")
+
+    @pytest.mark.asyncio
+    async def test_synthesize_with_stub_model(self, monkeypatch):
+        """Full path with a stub model: speaker choice, speed and WAV encoding."""
+        import base64
+
+        import numpy as np
+        import torch
+
+        from tts_service.engines import pokot_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "POKOT_MODELS", {"pko-p3": {"repo": "o/r", "speaker": "PK03"}}
+        )
+        seen = {}
+
+        class StubTokenizer:
+            def text_to_ids(self, text):
+                seen["text"] = text
+                return [1, 2, 3]
+
+        class StubModel:
+            speaker_ids = {"PK01": 0, "PK02": 1, "PK03": 2}
+            tokenizer = StubTokenizer()
+            config = type(
+                "C",
+                (),
+                {"model_args": type("A", (), {"use_speaker_embedding": True})()},
+            )()
+
+            def inference(self, x, aux_input):
+                seen["speaker_ids"] = aux_input["speaker_ids"].tolist()
+                seen["length_scale"] = self.length_scale
+                return {"model_outputs": torch.zeros(1, 1, 1600)}
+
+        engine = mod.PokotVitsEngine()
+        engine._models["pko-p3"] = StubModel()
+
+        result = await engine.synthesize("Ngala achey", "pko-p3", speed=2.0)
+
+        assert result["engine"] == "pokot_vits"
+        assert result["format"] == "wav"
+        assert result["sample_rate"] == 16000
+        wav = base64.b64decode(result["audio_base64"])
+        assert wav[:4] == b"RIFF" and wav[8:12] == b"WAVE"
+        assert seen["text"] == "ŋala acey"
+        assert seen["speaker_ids"] == [2]  # configured speaker "PK03"
+        assert seen["length_scale"] == pytest.approx(0.5)
+        assert np.frombuffer(wav[44:], dtype=np.int16).shape[0] == 1600
+
+    @pytest.mark.asyncio
+    async def test_unknown_speaker_is_rejected(self, monkeypatch):
+        from tts_service.engines import pokot_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "POKOT_MODELS", {"pko-p3": {"repo": "o/r", "speaker": "XX"}}
+        )
+
+        class StubModel:
+            speaker_ids = {"PK01": 0}
+            tokenizer = type("T", (), {"text_to_ids": lambda self, t: [1]})()
+            config = type(
+                "C",
+                (),
+                {"model_args": type("A", (), {"use_speaker_embedding": True})()},
+            )()
+
+        engine = mod.PokotVitsEngine()
+        engine._models["pko-p3"] = StubModel()
+        with pytest.raises(ValueError, match="Unknown speaker"):
+            await engine.synthesize("poru rop", "pko-p3")
+
+
+class TestPokotLanguages:
+    def test_pokot_languages_listed_with_engine(self):
+        langs = client.get("/languages").json()
+        for code in ("pko-p1", "pko-p2", "pko-p3"):
+            assert code in langs
+            assert langs[code]["preferred_engine"] == "pokot_vits"
+        assert langs["pko"]["preferred_engine"] != "pokot_vits"
+
+
+# ── Karamojong VITS engine ────────────────────────────────────
+
+
+class TestKaramojongVitsEngine:
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("Ngitunga daadang", "ŋituŋa daadaŋ"),
+            ("ng'aren  ng’ina\n kalo", "ŋaren ŋina kalo"),
+            # U+02BC is not kept by the training rules, so it splits the word
+            ("ngʼina", "ŋ ina"),
+            ("Ethiopia, chicha!", "etiopia cica"),
+            ("fazvix qñh", "paswiks kny"),
+            ("nngolo nngitunga", "ŋolo ŋituŋa"),
+            ("akidindinnga", "akidindinŋa"),
+            ("a-b d’e 'x- -", "a-b d'e ks"),
+            ("?!", ""),
+        ],
+    )
+    def test_normalise_text(self, raw, expected):
+        from tts_service.engines.karamojong_vits_engine import normalise_text
+
+        assert normalise_text(raw) == expected
+
+    def test_supports_only_configured_codes(self, monkeypatch):
+        from tts_service.engines import karamojong_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "KARAMOJONG_MODELS", {"kdj-k05": {"repo": "o/r", "speaker": None}}
+        )
+        engine = mod.KaramojongVitsEngine()
+        assert engine.supports_language("kdj-k05")
+        assert not engine.supports_language("kdj")
+
+    @pytest.mark.asyncio
+    async def test_rejects_unconfigured_language(self, monkeypatch):
+        from tts_service.engines import karamojong_vits_engine as mod
+
+        monkeypatch.setattr(mod, "KARAMOJONG_MODELS", {})
+        with pytest.raises(ValueError):
+            await mod.KaramojongVitsEngine().synthesize("ngitunga", "kdj-k05")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("text", ["?! -", "ngitunga 12"])
+    async def test_rejects_empty_text_and_digits(self, monkeypatch, text):
+        from tts_service.engines import karamojong_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "KARAMOJONG_MODELS", {"kdj-k05": {"repo": "o/r", "speaker": None}}
+        )
+        with pytest.raises(ValueError):
+            await mod.KaramojongVitsEngine().synthesize(text, "kdj-k05")
+
+    @pytest.mark.asyncio
+    async def test_synthesize_with_stub_model(self, monkeypatch):
+        """Full path with a stub single-speaker model: speed and WAV encoding."""
+        import base64
+
+        import numpy as np
+        import torch
+
+        from tts_service.engines import karamojong_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "KARAMOJONG_MODELS", {"kdj-k05": {"repo": "o/r", "speaker": None}}
+        )
+        seen = {}
+
+        class StubTokenizer:
+            def text_to_ids(self, text):
+                seen["text"] = text
+                return [1, 2, 3]
+
+        class StubModel:
+            speakers = ["K05"]
+            tokenizer = StubTokenizer()
+            config = type(
+                "C",
+                (),
+                {"model_args": type("A", (), {"use_speaker_embedding": False})()},
+            )()
+
+            def inference(self, x, aux_input):
+                seen["aux_keys"] = sorted(aux_input)
+                seen["length_scale"] = self.length_scale
+                return {"model_outputs": torch.zeros(1, 1, 1600)}
+
+        engine = mod.KaramojongVitsEngine()
+        engine._models["kdj-k05"] = StubModel()
+
+        result = await engine.synthesize("Ngitunga daadang", "kdj-k05", speed=2.0)
+
+        assert result["engine"] == "karamojong_vits"
+        assert result["format"] == "wav"
+        assert result["sample_rate"] == 16000
+        wav = base64.b64decode(result["audio_base64"])
+        assert wav[:4] == b"RIFF" and wav[8:12] == b"WAVE"
+        assert seen["text"] == "ŋituŋa daadaŋ"
+        assert seen["aux_keys"] == ["x_lengths"]  # single speaker: no speaker id
+        assert seen["length_scale"] == pytest.approx(0.5)
+        assert np.frombuffer(wav[44:], dtype=np.int16).shape[0] == 1600
+
+
+class TestKaramojongLanguages:
+    def test_karamojong_languages_listed_with_engine(self):
+        langs = client.get("/languages").json()
+        assert langs["kdj-k05"]["preferred_engine"] == "karamojong_vits"
+        assert langs["kdj"]["preferred_engine"] != "karamojong_vits"
+
+
+class TestTurkanaVitsEngine:
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("Tana Joko", "tana joko"),
+            ("ngibaren  kalo\n wukor", "ŋibaren kalo wukor"),
+            ("shu thaa chal", "ʃu θaa cal"),
+            ("nyakuj, ekile!", "nyakuj ekile"),
+            ("a-b d’e", "a-b d'e"),
+            ("ŋibaren", "ŋibaren"),
+            ("(tana) joko?", "tana joko"),
+            ("?! ...", ""),
+            ("ekile—tana", "ekile tana"),
+            ("tana & joko*", "tana joko"),
+            ("«tana» joko", "tana joko"),
+            ("ngʼa ekile–tana", "ŋ'a ekile–tana"),
+            ("taxi", "taksi"),
+            ("***", ""),
+        ],
+    )
+    def test_normalise_text(self, raw, expected):
+        from tts_service.engines.turkana_vits_engine import normalise_text
+
+        assert normalise_text(raw) == expected
+
+    def test_normalise_text_rejects_digits(self):
+        from tts_service.engines.turkana_vits_engine import normalise_text
+
+        with pytest.raises(ValueError, match="digits"):
+            normalise_text("ekile 12")
+
+    def test_supports_only_configured_codes(self, monkeypatch):
+        from tts_service.engines import turkana_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "TURKANA_MODELS", {"tuv-open": {"repo": "o/r", "speaker": None}}
+        )
+        engine = mod.TurkanaVitsEngine()
+        assert engine.supports_language("tuv-open")
+        assert not engine.supports_language("tuv-col")
+
+    @pytest.mark.asyncio
+    async def test_rejects_unconfigured_language(self, monkeypatch):
+        from tts_service.engines import turkana_vits_engine as mod
+
+        monkeypatch.setattr(mod, "TURKANA_MODELS", {})
+        with pytest.raises(ValueError):
+            await mod.TurkanaVitsEngine().synthesize("tana joko", "tuv-open")
+
+    @pytest.mark.asyncio
+    async def test_rejects_text_without_turkana_letters(self, monkeypatch):
+        from tts_service.engines import turkana_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "TURKANA_MODELS", {"tuv-open": {"repo": "o/r", "speaker": None}}
+        )
+        for text in ("?! ...", "*** — &"):
+            with pytest.raises(ValueError):
+                await mod.TurkanaVitsEngine().synthesize(text, "tuv-open")
+
+    @pytest.mark.asyncio
+    async def test_synthesize_with_stub_model(self, monkeypatch):
+        """Full path with a stub model: speaker choice, speed and WAV encoding."""
+        import base64
+
+        import numpy as np
+        import torch
+
+        from tts_service.engines import turkana_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "TURKANA_MODELS", {"tuv-col": {"repo": "o/r", "speaker": "T05"}}
+        )
+        seen = {}
+
+        class StubTokenizer:
+            def text_to_ids(self, text):
+                seen["text"] = text
+                return [1, 2, 3]
+
+        class StubModel:
+            speaker_ids = {"T01": 0, "T02": 1, "T05": 2}
+            tokenizer = StubTokenizer()
+            config = type(
+                "C",
+                (),
+                {"model_args": type("A", (), {"use_speaker_embedding": True})()},
+            )()
+
+            def inference(self, x, aux_input):
+                seen["speaker_ids"] = aux_input["speaker_ids"].tolist()
+                seen["length_scale"] = self.length_scale
+                return {"model_outputs": torch.zeros(1, 1, 1600)}
+
+        engine = mod.TurkanaVitsEngine()
+        engine._models["tuv-col"] = StubModel()
+
+        result = await engine.synthesize("Ngibaren shu", "tuv-col", speed=2.0)
+
+        assert result["engine"] == "turkana_vits"
+        assert result["format"] == "wav"
+        assert result["sample_rate"] == 16000
+        wav = base64.b64decode(result["audio_base64"])
+        assert wav[:4] == b"RIFF" and wav[8:12] == b"WAVE"
+        assert seen["text"] == "ŋibaren ʃu"
+        assert seen["speaker_ids"] == [2]  # configured speaker "T05"
+        assert seen["length_scale"] == pytest.approx(0.5)
+        assert np.frombuffer(wav[44:], dtype=np.int16).shape[0] == 1600
+
+    @pytest.mark.asyncio
+    async def test_first_voice_is_the_default(self, monkeypatch):
+        from tts_service.engines import turkana_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "TURKANA_MODELS", {"tuv-open": {"repo": "o/r", "speaker": None}}
+        )
+        seen = {}
+
+        class StubModel:
+            speaker_ids = {"GRN": 0}
+            tokenizer = type("T", (), {"text_to_ids": lambda self, t: [1]})()
+            config = type(
+                "C",
+                (),
+                {"model_args": type("A", (), {"use_speaker_embedding": True})()},
+            )()
+
+            def inference(self, x, aux_input):
+                import torch
+
+                seen["speaker_ids"] = aux_input["speaker_ids"].tolist()
+                return {"model_outputs": torch.zeros(1, 1, 160)}
+
+        engine = mod.TurkanaVitsEngine()
+        engine._models["tuv-open"] = StubModel()
+        await engine.synthesize("tana joko", "tuv-open")
+        assert seen["speaker_ids"] == [0]
+
+    @pytest.mark.asyncio
+    async def test_unknown_speaker_is_rejected(self, monkeypatch):
+        from tts_service.engines import turkana_vits_engine as mod
+
+        monkeypatch.setattr(
+            mod, "TURKANA_MODELS", {"tuv-col": {"repo": "o/r", "speaker": "XX"}}
+        )
+
+        class StubModel:
+            speaker_ids = {"T01": 0}
+            tokenizer = type("T", (), {"text_to_ids": lambda self, t: [1]})()
+            config = type(
+                "C",
+                (),
+                {"model_args": type("A", (), {"use_speaker_embedding": True})()},
+            )()
+
+        engine = mod.TurkanaVitsEngine()
+        engine._models["tuv-col"] = StubModel()
+        with pytest.raises(ValueError, match="Unknown speaker"):
+            await engine.synthesize("tana joko", "tuv-col")
+
+
+class TestTurkanaLanguages:
+    def test_turkana_languages_listed_with_engine(self):
+        langs = client.get("/languages").json()
+        for code in ("tuv-open", "tuv-col"):
+            assert code in langs
+            assert langs[code]["preferred_engine"] == "turkana_vits"
+        assert langs["tuv"]["preferred_engine"] != "turkana_vits"
+
+
 # ── Ratings persistence ────────────────────────────────────────
 
 

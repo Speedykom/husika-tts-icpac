@@ -9,7 +9,12 @@ import yaml
 from .base import TTSEngine
 from .coqui_vits_engine import CoquiVitsEngine
 from .espeak_engine import EspeakEngine
+from .karamojong_vits_engine import KaramojongVitsEngine
 from .mms_engine import MmsEngine
+from .piper_engine import PiperEngine
+from .pokot_vits_engine import PokotVitsEngine
+from .toposa_vits_engine import ToposaVitsEngine
+from .turkana_vits_engine import TurkanaVitsEngine
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +27,14 @@ class EngineRouter:
         self.language_config: dict = self._load_config()
 
         self.engines: dict[str, TTSEngine] = {
+            "piper": PiperEngine(),
             "espeak": EspeakEngine(),
             "mms": MmsEngine(),
             "coqui_vits": CoquiVitsEngine(),
+            "toposa_vits": ToposaVitsEngine(),
+            "pokot_vits": PokotVitsEngine(),
+            "karamojong_vits": KaramojongVitsEngine(),
+            "turkana_vits": TurkanaVitsEngine(),
         }
 
     def _load_config(self) -> dict:
@@ -60,8 +70,8 @@ class EngineRouter:
         if preferred_engine and preferred_engine.supports_language(language_code):
             return preferred_engine, language_code
 
-        # Fallback chain: mms -> espeak
-        for fallback in ("mms", "espeak"):
+        # Fallback chain: piper -> mms -> espeak
+        for fallback in ("piper", "mms", "espeak"):
             engine = self.engines[fallback]
             if fallback != preferred and engine.supports_language(language_code):
                 logger.info(f"Falling back to {fallback} for {language_code}")

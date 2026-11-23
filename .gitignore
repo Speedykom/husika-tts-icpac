@@ -29,6 +29,7 @@ htmlcov/
 *.pt
 *.pth
 *.safetensors
+*.onnx
 
 # Logs
 *.log
