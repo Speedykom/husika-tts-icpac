@@ -130,6 +130,7 @@
     #rating-status { font-size: .85rem; margin-top: .5rem; }
     .rating-saved { color: #16a34a; font-weight: 600; }
     .rating-error { color: #dc2626; font-weight: 600; }
+    .rating-history { color: #666; }
     #btn-submit-rating { background: #16a34a; }
     #btn-submit-rating:hover { background: #15803d; }
     #btn-submit-rating:disabled { background: #86efac; }
@@ -409,6 +410,35 @@
     function clearToken() {
       sessionStorage.removeItem("husika_token");
       sessionStorage.removeItem("husika_username");
+      sessionStorage.removeItem("husika_is_admin");
+      resetUserUiState();
+    }
+
+    // Clear all per-user UI state so nothing from a previous session leaks
+    // into the next login (stars, comment, recording, last synthesis, result).
+    function resetUserUiState() {
+      selectedRating = 0;
+      lastSynthText = "";
+      lastSynthLang = "";
+      resetStars();
+      const comment = document.getElementById("comment");
+      if (comment) comment.value = "";
+      const ratingStatus = document.getElementById("rating-status");
+      if (ratingStatus) ratingStatus.innerHTML = "";
+      // Hide the result panel and clear its contents — but keep the #player and
+      // #meta child elements intact (synthesize() reuses them).
+      const result = document.getElementById("result");
+      if (result) result.className = "";
+      const meta = document.getElementById("meta");
+      if (meta) meta.innerHTML = "";
+      const player = document.getElementById("player");
+      if (player) {
+        player.pause();
+        player.removeAttribute("src");
+        player.load();
+      }
+      if (typeof resetRecording === "function") resetRecording();
+      hideRatingPanel();
     }
 
     function authHeaders(extra = {}) {
@@ -631,11 +661,10 @@
         if (!res.ok) return;
         const rows = await res.json();
         if (rows.length > 0) {
-          const existing = rows[0];
-          selectStar(existing.rating);
-          document.getElementById("comment").value = existing.comment || "";
+          const previous = rows[0];
+          const when = new Date(previous.timestamp).toLocaleString();
           document.getElementById("rating-status").innerHTML =
-            `<span class="rating-saved">You rated this ${existing.rating}★ previously — update below.</span>`;
+            `<span class="rating-history">Your most recent rating for this phrase: ${previous.rating}★ (${when}). Saving adds a new rating.</span>`;
         }
       } catch (_) { /* non-critical */ }
     }

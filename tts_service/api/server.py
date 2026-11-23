@@ -7,7 +7,16 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, status, Request
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
@@ -93,7 +102,6 @@ async def _require_any_auth(request: Request) -> None:
     )
 
 
-
 _DESCRIPTION = """\
 Multilingual Text-to-Speech for the IGAD borderlands early warning system.
 
@@ -156,7 +164,10 @@ app = FastAPI(
     openapi_tags=[
         {"name": "TTS", "description": "Text-to-speech synthesis endpoints"},
         {"name": "Auth", "description": "Obtain a short-lived JWT Bearer token"},
-        {"name": "Ratings", "description": "Submit and query synthesis quality ratings"},
+        {
+            "name": "Ratings",
+            "description": "Submit and query synthesis quality ratings",
+        },
         {"name": "Health", "description": "Service health and language metadata"},
     ],
 )
@@ -189,7 +200,8 @@ def _custom_openapi() -> dict:
             "in": "header",
             "name": "X-API-Key",
             "description": (
-                "Paste **only the key value** (e.g. `hsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`). "
+                "Paste **only the key value** "
+                "(e.g. `hsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`). "
                 "Do **not** include `API_KEY=`. "
                 "Generate a new key with: `python scripts/generate_api_key.py`."
             ),
@@ -351,8 +363,6 @@ async def synthesize(
         raise HTTPException(status_code=500, detail="Synthesis failed")
 
 
-
-
 @app.get("/health", tags=["Health"], summary="Health check")
 async def health_check() -> dict:
     """Returns `{"status": "ok"}` when the service is running."""
@@ -363,8 +373,6 @@ async def health_check() -> dict:
 async def list_languages() -> dict:
     """Returns metadata for every supported language including engine and model info."""
     return router.get_language_info()
-
-
 
 
 @app.post(
@@ -378,8 +386,8 @@ async def submit_rating(
     request: RatingRequest,
     _auth: None = Depends(_require_any_auth),
 ) -> RatingResponse:
-    """Create or update a quality rating for a synthesized phrase."""
-    record = ratings_store.upsert(
+    """Record a quality rating for a synthesized phrase (history is kept)."""
+    record = ratings_store.add(
         reviewer=request.reviewer,
         language=request.language,
         phrase=request.phrase,
