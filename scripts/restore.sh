@@ -3,6 +3,20 @@ set -euo pipefail
 
 DEPLOY_DIR=${DEPLOY_DIR:-/srv/husika}
 BACKUP_DIR=$DEPLOY_DIR/backups
+ENV_FILE=$DEPLOY_DIR/.env
+
+# Read one KEY=value from the deploy .env without executing it (see backup.sh).
+env_value() {
+  [ -f "$ENV_FILE" ] || return 0
+  sed -n "s/^[[:space:]]*$1=//p" "$ENV_FILE" | tail -n 1 |
+    sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"
+}
+
+# Host-side live DB: ./data is bind-mounted to the container's data dir, so the
+# file name follows DB_PATH, exactly as in backup.sh.
+DB_PATH=${DB_PATH:-$(env_value DB_PATH)}
+DB_PATH=${DB_PATH:-/app/data/husika.db}
+LIVE_DB=$DEPLOY_DIR/data/$(basename "$DB_PATH")
 
 if [ -z "${1:-}" ]; then
   echo "Usage: $0 <backup_file>"
@@ -45,7 +59,12 @@ PY
   fi
 }
 
-if ! validate_sqlite "$BACKUP_FILE"; then
+# Check a scratch copy: opening a WAL-mode DB creates -wal/-shm sidecars, which
+# we don't want left next to the backup file itself.
+CHECK_DIR=$(mktemp -d)
+trap 'rm -rf "$CHECK_DIR"' EXIT
+cp "$BACKUP_FILE" "$CHECK_DIR/check.db"
+if ! validate_sqlite "$CHECK_DIR/check.db"; then
   echo "ERROR: $BACKUP_FILE failed SQLite validation — refusing to restore."
   exit 1
 fi
@@ -58,7 +77,21 @@ sleep 5
 # returns 502 for the duration of the restore. This is an accepted maintenance
 # window: it guarantees no process holds husika.db open while we swap the file.
 docker compose -f "$DEPLOY_DIR/docker-compose.yml" down
-cp "$BACKUP_FILE" "$DEPLOY_DIR/data/husika.db"
+
+# Keep the current DB (plus any WAL/SHM sidecars) so a mistaken restore can be
+# undone. Named outside the husika_*.db pattern so backup.sh never prunes it.
+if [ -f "$LIVE_DB" ]; then
+  SAFETY_DIR=$BACKUP_DIR/pre-restore_$(date +%Y%m%d_%H%M%S)
+  mkdir -p "$SAFETY_DIR"
+  cp -p "$LIVE_DB" "$LIVE_DB"-wal "$LIVE_DB"-shm "$SAFETY_DIR"/ 2>/dev/null || true
+  echo "Previous database saved to: $SAFETY_DIR"
+fi
+
+# The app runs SQLite in WAL mode. A -wal/-shm left by the old DB (e.g. after an
+# unclean shutdown) would be replayed on top of the restored file and corrupt
+# it, so remove them before swapping the file in.
+rm -f "$LIVE_DB"-wal "$LIVE_DB"-shm
+cp "$BACKUP_FILE" "$LIVE_DB"
 docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d
 
 # `up -d` returns as soon as containers start, not once the app is serving.

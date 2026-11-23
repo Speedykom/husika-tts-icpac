@@ -4,17 +4,25 @@ set -euo pipefail
 DEPLOY_DIR=${DEPLOY_DIR:-/srv/husika}
 
 ENV_FILE=$DEPLOY_DIR/.env
-if [ -f "$ENV_FILE" ]; then
-  set -a
-  # shellcheck source=/dev/null
-  . "$ENV_FILE"
-  set +a
-fi
 
+# Read one KEY=value from the deploy .env without executing it. The file is in
+# docker compose's format, not shell: JSON model maps or secrets containing
+# spaces, quotes or `$` would break (or run) under `source`, and with `set -e`
+# that would silently stop the nightly backup.
+env_value() {
+  [ -f "$ENV_FILE" ] || return 0
+  sed -n "s/^[[:space:]]*$1=//p" "$ENV_FILE" | tail -n 1 |
+    sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"
+}
+
+# Precedence: variable already set in the environment > deploy .env > default.
+CONTAINER=${CONTAINER:-$(env_value CONTAINER)}
 CONTAINER=${CONTAINER:-husika-app-1}
 # In-container DB path, matching docker-compose.yml's DB_PATH.
+DB_PATH=${DB_PATH:-$(env_value DB_PATH)}
 DB_PATH=${DB_PATH:-/app/data/husika.db}
-KEEP_DAYS=${BACKUP_KEEP_DAYS:-7}
+KEEP_DAYS=${BACKUP_KEEP_DAYS:-$(env_value BACKUP_KEEP_DAYS)}
+KEEP_DAYS=${KEEP_DAYS:-7}
 
 # Host-side paths. ./data is bind-mounted to the container's data dir, so the
 # live DB and the temp copy the container writes both appear under ./data.
@@ -52,5 +60,5 @@ mv "$TMP_DB" "$BACKUP_FILE"
 echo "[$(date)] Backup saved: $BACKUP_FILE"
 
 # Remove backups older than KEEP_DAYS
-find "$BACKUP_DIR" -name "husika_*.db" -mtime +$KEEP_DAYS -delete
+find "$BACKUP_DIR" -name "husika_*.db" -mtime +"$KEEP_DAYS" -delete
 echo "[$(date)] Cleaned up backups older than $KEEP_DAYS days"
