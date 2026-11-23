@@ -77,6 +77,22 @@ def _set_speaker_count(config, num_speakers: int) -> None:
         config.model_args.speakers_file = None
 
 
+def _check_speaker_count(state: dict, num_speakers: int, source: str) -> None:
+    """Check the speaker list against the checkpoint before the model is built.
+
+    The speaker embedding ``emb_g.weight`` has one row per trained speaker, so a list
+    of a different length (``source``) would otherwise surface only as a confusing
+    size-mismatch error when the weights are loaded. Single-speaker checkpoints
+    have no speaker embedding and pass.
+    """
+    emb = state.get("emb_g.weight")
+    if emb is not None and emb.shape[0] != num_speakers:
+        raise ValueError(
+            f"{source} lists {num_speakers} speakers but the checkpoint was trained "
+            f"with {emb.shape[0]}"
+        )
+
+
 def normalise_text(text: str) -> str:
     """Normalise Toposa text exactly as during training.
 
@@ -121,6 +137,13 @@ class ToposaVitsEngine(TTSEngine):
         config.load_json(os.path.join(repo_dir, "config.json"))
         mms = read_json("mms_config.json")
         speakers = read_json("toposa_run.json").get("speakers") or []
+
+        # The checkpoint is a pickle from our own organisation's repo (same trust
+        # level as the other Coqui models), so full unpickling is required.
+        state = torch.load(
+            os.path.join(repo_dir, "model.pth"), map_location="cpu", weights_only=False
+        )["model"]
+        _check_speaker_count(state, len(speakers), "toposa_run.json")
         _set_speaker_count(config, len(speakers))
 
         model = Vits(config)
@@ -141,12 +164,6 @@ class ToposaVitsEngine(TTSEngine):
             use_eos_bos=False,
         )
         model.disc = None  # discriminator is training-only and not part of the release
-
-        # The checkpoint is a pickle from our own organisation's repo (same trust
-        # level as the other Coqui models), so full unpickling is required.
-        state = torch.load(
-            os.path.join(repo_dir, "model.pth"), map_location="cpu", weights_only=False
-        )["model"]
         model.load_state_dict(state, strict=True)
 
         model.speakers = speakers

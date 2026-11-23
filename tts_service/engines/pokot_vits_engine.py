@@ -37,7 +37,7 @@ import numpy as np
 
 from .base import TTSEngine
 from .coqui_vits_engine import CoquiVitsEngine
-from .toposa_vits_engine import _parse_models, _set_speaker_count
+from .toposa_vits_engine import _check_speaker_count, _parse_models, _set_speaker_count
 
 logger = logging.getLogger(__name__)
 
@@ -112,9 +112,18 @@ class PokotVitsEngine(TTSEngine):
         if os.path.exists(speakers_file):
             table = torch.load(speakers_file, map_location="cpu", weights_only=False)
             speaker_ids = {name: int(i) for name, i in table.items()}
+            source = "speakers.pth"
         else:
             names = read_json("pokot_run.json").get("speakers") or []
             speaker_ids = {name: i for i, name in enumerate(names)}
+            source = "pokot_run.json"
+
+        # The checkpoint is a pickle from our own organisation's private repo, so
+        # full unpickling is required. ``disc.*`` is the training-only discriminator.
+        (checkpoint,) = glob.glob(os.path.join(repo_dir, "checkpoint_*.pth"))
+        state = torch.load(checkpoint, map_location="cpu", weights_only=False)["model"]
+        state = {k: v for k, v in state.items() if not k.startswith("disc.")}
+        _check_speaker_count(state, len(speaker_ids), source)
         _set_speaker_count(config, len(speaker_ids))
 
         model = Vits(config)
@@ -135,12 +144,6 @@ class PokotVitsEngine(TTSEngine):
             add_blank=bool(mms["data"].get("add_blank", True)),
             use_eos_bos=False,
         )
-
-        # The checkpoint is a pickle from our own organisation's private repo, so
-        # full unpickling is required. ``disc.*`` is the training-only discriminator.
-        (checkpoint,) = glob.glob(os.path.join(repo_dir, "checkpoint_*.pth"))
-        state = torch.load(checkpoint, map_location="cpu", weights_only=False)["model"]
-        state = {k: v for k, v in state.items() if not k.startswith("disc.")}
         model.disc = None
         model.load_state_dict(state, strict=True)
         model.speaker_ids = speaker_ids

@@ -298,6 +298,17 @@ class TestMultiSpeakerConfig:
         with pytest.raises(ValueError):
             _set_speaker_count(self._training_config(), 0)
 
+    def test_speaker_list_is_checked_against_checkpoint(self):
+        import torch
+
+        from tts_service.engines.toposa_vits_engine import _check_speaker_count
+
+        state = {"emb_g.weight": torch.zeros(5, 256)}
+        _check_speaker_count(state, 5, "toposa_run.json")  # matches: no error
+        with pytest.raises(ValueError, match="lists 4 speakers .* trained with 5"):
+            _check_speaker_count(state, 4, "toposa_run.json")
+        _check_speaker_count({}, 1, "toposa_run.json")  # single speaker: no embedding
+
 
 # ── Pokot VITS engine ─────────────────────────────────────────
 
