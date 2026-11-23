@@ -258,6 +258,58 @@ class TestToposaLanguages:
             assert langs[code]["preferred_engine"] == "toposa_vits"
 
 
+class TestMultiSpeakerConfig:
+    """Saved multi-speaker training configs have no speaker count (toq-5spk, pko-p3)."""
+
+    @staticmethod
+    def _training_config(use_speaker_embedding=True):
+        from TTS.tts.configs.vits_config import VitsConfig
+
+        config = VitsConfig()
+        config.model_args.use_speaker_embedding = use_speaker_embedding
+        config.model_args.num_speakers = 0
+        config.model_args.speakers_file = "/vol/runs/some-training-run/speakers.pth"
+        return config
+
+    def test_speaker_layers_are_built(self):
+        from TTS.tts.models.vits import Vits
+
+        from tts_service.engines.toposa_vits_engine import _set_speaker_count
+
+        config = self._training_config()
+        assert not hasattr(Vits(config), "emb_g")  # the bug: no speaker embedding
+        _set_speaker_count(config, 5)
+        model = Vits(config)
+        channels = config.model_args.speaker_embedding_channels
+        assert tuple(model.emb_g.weight.shape) == (5, channels)
+        assert config.model_args.speakers_file is None
+
+    def test_single_speaker_config_is_unchanged(self):
+        from tts_service.engines.toposa_vits_engine import _set_speaker_count
+
+        config = self._training_config(use_speaker_embedding=False)
+        _set_speaker_count(config, 0)
+        assert config.model_args.num_speakers == 0
+        assert config.model_args.speakers_file.startswith("/vol/")
+
+    def test_multi_speaker_without_speakers_is_rejected(self):
+        from tts_service.engines.toposa_vits_engine import _set_speaker_count
+
+        with pytest.raises(ValueError):
+            _set_speaker_count(self._training_config(), 0)
+
+    def test_speaker_list_is_checked_against_checkpoint(self):
+        import torch
+
+        from tts_service.engines.toposa_vits_engine import _check_speaker_count
+
+        state = {"emb_g.weight": torch.zeros(5, 256)}
+        _check_speaker_count(state, 5, "toposa_run.json")  # matches: no error
+        with pytest.raises(ValueError, match="lists 4 speakers .* trained with 5"):
+            _check_speaker_count(state, 4, "toposa_run.json")
+        _check_speaker_count({}, 1, "toposa_run.json")  # single speaker: no embedding
+
+
 # ── Pokot VITS engine ─────────────────────────────────────────
 
 

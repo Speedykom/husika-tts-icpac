@@ -175,7 +175,7 @@ make dev-install    # uv sync --extra dev (includes test & lint tools)
 ### Run
 
 ```bash
-make run
+h
 # runs: uv run uvicorn tts_service.api.server:app --host 0.0.0.0 --port 8181 --reload
 ```
 

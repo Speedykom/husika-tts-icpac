@@ -61,6 +61,38 @@ def _parse_models(raw: str) -> dict[str, dict]:
 TOPOSA_MODELS: dict[str, dict] = _parse_models(os.environ.get("TOPOSA_MODELS", ""))
 
 
+def _set_speaker_count(config, num_speakers: int) -> None:
+    """Make a multi-speaker config loadable outside training.
+
+    coqui-tts 0.27.x builds the speaker embedding, and every layer conditioned on it,
+    only when the speaker count is known before ``Vits(config)`` is created. The saved
+    training configs leave the count empty and point ``speakers_file`` at the training
+    machine, so without this the checkpoint fails to load with unexpected
+    ``emb_g.weight`` / ``cond_layer`` keys. Single-speaker configs are left unchanged.
+    """
+    if config.model_args.use_speaker_embedding:
+        if num_speakers <= 0:
+            raise ValueError("Multi-speaker checkpoint without a speaker list")
+        config.model_args.num_speakers = num_speakers
+        config.model_args.speakers_file = None
+
+
+def _check_speaker_count(state: dict, num_speakers: int, source: str) -> None:
+    """Check the speaker list against the checkpoint before the model is built.
+
+    The speaker embedding ``emb_g.weight`` has one row per trained speaker, so a list
+    of a different length (``source``) would otherwise surface only as a confusing
+    size-mismatch error when the weights are loaded. Single-speaker checkpoints
+    have no speaker embedding and pass.
+    """
+    emb = state.get("emb_g.weight")
+    if emb is not None and emb.shape[0] != num_speakers:
+        raise ValueError(
+            f"{source} lists {num_speakers} speakers but the checkpoint was trained "
+            f"with {emb.shape[0]}"
+        )
+
+
 def normalise_text(text: str) -> str:
     """Normalise Toposa text exactly as during training.
 
@@ -104,6 +136,15 @@ class ToposaVitsEngine(TTSEngine):
         config = VitsConfig()
         config.load_json(os.path.join(repo_dir, "config.json"))
         mms = read_json("mms_config.json")
+        speakers = read_json("toposa_run.json").get("speakers") or []
+
+        # The checkpoint is a pickle from our own organisation's repo (same trust
+        # level as the other Coqui models), so full unpickling is required.
+        state = torch.load(
+            os.path.join(repo_dir, "model.pth"), map_location="cpu", weights_only=False
+        )["model"]
+        _check_speaker_count(state, len(speakers), "toposa_run.json")
+        _set_speaker_count(config, len(speakers))
 
         model = Vits(config)
         vocab_file = os.path.join(repo_dir, "mms_vocab.txt")
@@ -123,15 +164,9 @@ class ToposaVitsEngine(TTSEngine):
             use_eos_bos=False,
         )
         model.disc = None  # discriminator is training-only and not part of the release
-
-        # The checkpoint is a pickle from our own organisation's repo (same trust
-        # level as the other Coqui models), so full unpickling is required.
-        state = torch.load(
-            os.path.join(repo_dir, "model.pth"), map_location="cpu", weights_only=False
-        )["model"]
         model.load_state_dict(state, strict=True)
 
-        model.speakers = read_json("toposa_run.json").get("speakers") or []
+        model.speakers = speakers
         return model.eval()
 
     def _load_model(self, language_code: str) -> None:
